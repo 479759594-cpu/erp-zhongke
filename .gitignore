@@ -1,0 +1,12 @@
+node_modules/
+uploads/
+audit.json
+audit.json.bak
+data.json
+data.json.bak
+data.json.corrupted.*
+tunnel_url_temp.txt
+tunnel_url_latest.txt
+tunnel_url.txt
+*.log
+.DS_Store
