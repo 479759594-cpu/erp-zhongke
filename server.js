@@ -549,15 +549,14 @@ function handleAPI(req, res, pathname, method) {
       prompt += '问题描述：' + query + '\n';
       prompt += '请提供：1.问题可能原因 2.排查步骤 3.解决方案 4.注意事项。用中文回答，简洁实用。';
 
+      var modelName = (d.globalSettings && d.globalSettings.doubaoModel) || 'doubao-seed-2-0-pro-260215';
       var postData = JSON.stringify({
-        model: (d.globalSettings && d.globalSettings.doubaoModel) || 'doubao-2.0-pro-32k',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
-        temperature: 0.3
+        model: modelName,
+        input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }]
       });
       var https = require('https');
       var urlModule = require('url');
-      var apiUrl = urlModule.parse('https://ark.cn-beijing.volces.com/api/v3/chat/completions');
+      var apiUrl = urlModule.parse('https://ark.cn-beijing.volces.com/api/v3/responses');
       var req2 = https.request({
         hostname: apiUrl.hostname,
         path: apiUrl.path,
@@ -566,22 +565,34 @@ function handleAPI(req, res, pathname, method) {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + apiKey
         },
-        timeout: 30000
+        timeout: 60000
       }, function(res2) {
         var body = '';
         res2.on('data', function(c) { body += c; });
         res2.on('end', function() {
           try {
             var result = JSON.parse(body);
-            if (result.choices && result.choices[0]) {
-              sendJSON(res, 200, { ok: true, data: { answer: result.choices[0].message.content, model: result.model || 'doubao' } });
+            var answer = '';
+            if (result.output && result.output.length) {
+              for (var i = 0; i < result.output.length; i++) {
+                var out = result.output[i];
+                if (out.content && out.content.length) {
+                  for (var j = 0; j < out.content.length; j++) {
+                    if (out.content[j].text) answer += out.content[j].text;
+                    else if (out.content[j].type === 'output_text') answer += out.content[j].text;
+                  }
+                }
+              }
+            }
+            if (answer) {
+              sendJSON(res, 200, { ok: true, data: { answer: answer, model: result.model || modelName } });
             } else if (result.error) {
               sendJSON(res, 500, { ok: false, msg: 'AI查询失败：' + (result.error.message || result.error.code || '未知错误') });
             } else {
-              sendJSON(res, 500, { ok: false, msg: 'AI返回格式异常，请稍后重试' });
+              sendJSON(res, 500, { ok: false, msg: 'AI返回为空，请尝试更具体的问题描述' });
             }
           } catch(e) {
-            sendJSON(res, 500, { ok: false, msg: 'AI响应解析失败' });
+            sendJSON(res, 500, { ok: false, msg: 'AI响应解析失败：' + e.message });
           }
         });
       });
