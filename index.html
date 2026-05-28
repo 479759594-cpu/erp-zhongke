@@ -150,9 +150,10 @@ main{max-width:780px;margin:0 auto;padding:20px 14px 40px}
 .dp-picker .dp-header button{background:none;border:none;font-size:14px;font-weight:600;cursor:pointer;padding:6px 12px;border-radius:8px;font-family:inherit}
 .dp-picker .dp-header .dp-cancel{color:var(--ts)}.dp-picker .dp-header .dp-confirm{color:#fff;background:var(--p)}
 .dp-columns{display:flex;gap:10px;height:180px;position:relative}
-.dp-col{flex:1;overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;text-align:center;position:relative;z-index:1;padding:60px 0}
+.dp-col{flex:1;overflow-y:auto;scroll-snap-type:y proximity;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;text-align:center;position:relative;z-index:1;padding:60px 0}
 .dp-col::-webkit-scrollbar{display:none}
-.dp-col .dp-item{padding:10px 4px;scroll-snap-align:center;cursor:pointer;border-radius:8px;font-size:15px;color:var(--tl);transition:all .15s;user-select:none}
+.dp-col .dp-item{padding:10px 4px;scroll-snap-align:center;cursor:pointer;border-radius:8px;font-size:15px;color:var(--tl);transition:all .1s;user-select:none}
+.dp-col .dp-item:active{background:var(--pl)}
 .dp-col .dp-item.selected{color:var(--p);font-weight:700;font-size:17px;background:var(--pl)}
 .dp-mask{pointer-events:none;position:absolute;top:0;left:0;right:0;bottom:0;z-index:2;background:linear-gradient(to bottom,#fff 0%,rgba(255,255,255,0) 35%,rgba(255,255,255,0) 65%,#fff 100%)}
 .dp-highlight{pointer-events:none;position:absolute;top:50%;left:10px;right:10px;height:40px;transform:translateY(-50%);border-top:1.5px solid var(--b);border-bottom:1.5px solid var(--b);z-index:0}
@@ -206,7 +207,7 @@ function renderDatePicker(){
   if(_dpType==='datetime'){scrollToSel('dpColH');scrollToSel('dpColMi');}
  });
 }
-function scrollToSel(id){var c=document.getElementById(id);if(!c)return;var s=c.querySelector('.dp-item.selected');if(s)c.scrollTop=s.offsetTop-c.offsetHeight/2+s.offsetHeight/2;}
+function scrollToSel(id){var c=document.getElementById(id);if(!c)return;var s=c.querySelector('.dp-item.selected');if(s)s.scrollIntoView({behavior:'instant',block:'center'});}
 function pickDP(type,val){
  if(type==='y')_dpYear=val;else if(type==='m')_dpMonth=val;else if(type==='d')_dpDay=val;else if(type==='h')_dpHour=val;else if(type==='mi')_dpMinute=val;
  renderDatePicker();
@@ -529,31 +530,36 @@ function historyList(tasks){
 
 function showTask(id){api('/api/tasks?phone='+sess.phone).then(function(r){if(!r.ok)return;var t=null;for(var i=0;i<r.data.length;i++){if(r.data[i].id===id){t=r.data[i];break;}}if(!t)return;
  var st={pending:'待处理',processing:'处理中',completed:'已完成',cancelled:'已取消'},sm={pending:'bg-yellow',processing:'bg-blue',completed:'bg-green',cancelled:'bg-red'};
- var wsL='',wsC='';if(t.warrantyStatus==='in_warranty'){wsL='在保（保修期'+(t.warrantyMonths||12)+'个月）';wsC='bg-green';}else if(t.warrantyStatus==='out_warranty'){wsL='过保（已超过保修期）';wsC='bg-red';}else{wsL='未知';wsC='bg-yellow';}
  var addr='';if(t.province)addr+=t.province;if(t.city)addr+=' '+t.city;if(t.district)addr+=' '+t.district;if(t.detailAddress)addr+=' '+t.detailAddress;if(!addr&&t.address)addr=t.address;
+ var addrEnc=encodeURIComponent(addr||'广东省佛山市');
+ var mapHtml='<div style="border-radius:8px;overflow:hidden;margin-bottom:10px;border:1px solid var(--b)"><iframe width="100%" height="150" frameborder="0" scrolling="no" src="https://api.map.baidu.com/static/v2?ak=&center='+addrEnc+'&width=400&height=150&zoom=14&markers='+addrEnc+'"></iframe></div>';
+
+ var progressHtml='<div style="padding:8px 0">';
+ // 1. 已受理
+ progressHtml+='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px"><div style="width:28px;height:28px;border-radius:50%;background:var(--s);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;flex-shrink:0">✓</div><div><div style="font-weight:600;font-size:13px;color:var(--t)">服务需求已受理</div><div style="font-size:10px;color:var(--ts)">'+fmt(t.createdAt)+' · 您的报修已提交</div></div></div>';
+ // 2. 已接单/已派工
+ if(t.assigneeName){
+  progressHtml+='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px"><div style="width:28px;height:28px;border-radius:50%;background:var(--p);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;flex-shrink:0">✓</div><div><div style="font-weight:600;font-size:13px;color:var(--t)">已接单 · 已派工</div><div style="font-size:11px;color:var(--ts)">售后人员：<strong>'+esc(t.assigneeName)+'</strong></div>'+(t.assigneePhone?'<div style="font-size:11px;color:var(--ts)">电话：<a href="tel:'+esc(t.assigneePhone)+'" style="color:var(--p);font-weight:600;text-decoration:underline">'+esc(t.assigneePhone)+' 📞点击拨打</a></div>':'')+'<div style="font-size:10px;color:var(--ts)">接单时间：'+fmt(t.acceptTime||t.createdAt)+'</div><div style="font-size:10px;color:var(--w);margin-top:2px">⚠️ 即将为您服务，请注意来电。如紧急情况，请主动联系服务人员。</div></div></div>';
+ }else if(t.status!=='cancelled'){
+  progressHtml+='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px"><div style="width:28px;height:28px;border-radius:50%;background:var(--b);display:flex;align-items:center;justify-content:center;color:var(--ts);font-size:14px;flex-shrink:0">⏳</div><div><div style="font-weight:600;font-size:13px;color:var(--ts)">等待接单</div><div style="font-size:10px;color:var(--ts)">售后人员即将接单处理</div></div></div>';
+ }
+ // 3. 维修中/已完成
+ if(t.status==='completed'){
+  progressHtml+='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px"><div style="width:28px;height:28px;border-radius:50%;background:var(--s);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;flex-shrink:0">✓</div><div><div style="font-weight:600;font-size:13px;color:var(--t)">维修已完成</div><div style="font-size:10px;color:var(--ts)">'+(t.repairEndTime?fmt(t.repairEndTime):'')+'</div>'+(t.resolution?'<div style="font-size:11px;background:#f0fdf4;padding:6px 8px;border-radius:4px;margin-top:4px">📝 '+esc(t.resolution)+'</div>':'')+'</div></div>';
+ }else if(t.status==='processing'){
+  progressHtml+='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px"><div style="width:28px;height:28px;border-radius:50%;background:var(--w);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;flex-shrink:0">🔧</div><div><div style="font-weight:600;font-size:13px;color:var(--t)">维修处理中</div><div style="font-size:10px;color:var(--ts)">售后人员正在处理您的设备</div></div></div>';
+ }
+ progressHtml+='</div>';
+
  var info='';
- info+='<div class="ic"><div class="il">工单编号</div><div class="iv">#'+t.id+'</div></div>';
- info+='<div class="ic"><div class="il">保修状态</div><div class="iv"><span class="badge '+wsC+'">'+wsL+'</span></div></div>';
+ info+='<div class="ic"><div class="il">工单编号</div><div class="iv">'+t.id+'</div></div>';
+ info+='<div class="ic"><div class="il">报修人</div><div class="iv">'+esc(t.customerName||t.customerPhone)+'</div></div>';
  info+='<div class="ic"><div class="il">设备类型</div><div class="iv">'+esc(t.machineType)+'</div></div>';
- if(t.machinePart)info+='<div class="ic"><div class="il">故障部位</div><div class="iv"><span class="badge bg-cyan">'+esc(t.machinePart)+'</span></div></div>';
- info+='<div class="ic"><div class="il">设备编号</div><div class="iv">'+(t.machineSn||'未填写')+'</div></div>';
+ info+='<div class="ic"><div class="il">故障部位</div><div class="iv">'+(t.machinePart?esc(t.machinePart):'未指定')+'</div></div>';
  info+='<div class="ic"><div class="il">出厂日期</div><div class="iv">'+(t.manufactureDate?fmtD(t.manufactureDate):'-')+'</div></div>';
  info+='<div class="ic"><div class="il">状态</div><div class="iv"><span class="badge '+(sm[t.status]||'bg-yellow')+'">'+(st[t.status]||'待处理')+'</span></div></div>';
- info+='<div class="ic"><div class="il">提交时间</div><div class="iv">'+fmt(t.createdAt)+'</div></div>';
- if(t.assigneeName){
-  info+='<div class="ic full" style="background:#f0fdf4"><div class="il" style="color:var(--s)">🚛 售后人员信息</div><div class="iv" style="font-size:12px">';
-  info+='👤 接单人员：<strong>'+esc(t.assigneeName)+'</strong><br>';
-  if(t.assigneePhone)info+='📞 联系电话：<strong>'+esc(t.assigneePhone)+'</strong><br>';
-  if(t.acceptTime)info+='🕐 接单时间：<strong>'+fmt(t.acceptTime)+'</strong><br>';
-  if(t.repairStartTime)info+='🔧 开始维修：<strong>'+fmt(t.repairStartTime)+'</strong><br>';
-  if(t.repairEndTime)info+='✅ 维修完成：<strong>'+fmt(t.repairEndTime)+'</strong>';
-  info+='</div></div>';
- }
- if(t.quotation!==null&&t.quotation!==undefined)info+='<div class="ic full" style="background:#fffbeb"><div class="il">💰 维修费用</div><div class="iv" style="color:var(--d);font-size:14px">¥'+(t.quotation||0)+' <span class="badge '+(t.quotationStatus==='approved'?'bg-green':(t.quotationStatus==='rejected'?'bg-red':'bg-purple'))+'">'+(t.quotationStatus==='approved'?'已审批':(t.quotationStatus==='rejected'?'已拒绝':'待审批'))+'</span></div></div>';
- if(t.repairCost)info+='<div class="ic full"><div class="il">实际费用</div><div class="iv" style="color:var(--d)">¥'+t.repairCost+'</div></div>';
- info+='<div class="ic full"><div class="il">故障描述</div><div class="iv" style="font-weight:400;font-size:12px;white-space:pre-wrap">'+esc(t.faultDescription)+'</div></div>';
- if(t.resolution)info+='<div class="ic full"><div class="il">处理结果</div><div class="iv" style="font-weight:400;font-size:12px;white-space:pre-wrap;background:#f0fdf4;padding:6px;border-radius:4px">'+esc(t.resolution)+'</div></div>';
- document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3 style="font-size:14px;margin-bottom:8px">📋 报修详情 '+t.id+'</h3><div class="ig">'+info+'</div><button class="btn btn-o btn-block" onclick="closeModal()">关闭</button>';
+ if(t.quotation!==null&&t.quotation!==undefined)info+='<div class="ic full"><div class="il">💰 维修费用</div><div class="iv" style="color:var(--d);font-size:14px">¥'+(t.quotation||0)+' <span class="badge '+(t.quotationStatus==='approved'?'bg-green':(t.quotationStatus==='rejected'?'bg-red':'bg-purple'))+'">'+(t.quotationStatus==='approved'?'已审批':(t.quotationStatus==='rejected'?'已拒绝':'待审批'))+'</span></div></div>';
+ document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3 style="font-size:15px;margin-bottom:4px">📋 报修详情</h3><p style="color:var(--ts);font-size:11px;margin-bottom:10px">工单编号：'+t.id+'</p>'+mapHtml+'<div style="font-weight:700;font-size:13px;margin-bottom:6px">📌 服务进度</div>'+progressHtml+'<div class="ig" style="margin-top:8px">'+info+'</div><button class="btn btn-o btn-block" onclick="closeModal()">关闭</button>';
  document.getElementById('overlay').classList.add('show');
 });}
 function closeModal(){document.getElementById('overlay').classList.remove('show');}
