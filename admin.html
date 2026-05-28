@@ -407,13 +407,13 @@ function taskDetail(id){
   var act='';
   if(t.status!=='completed'&&t.status!=='cancelled'){
    act='<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--b)"><div style="font-weight:600;margin-bottom:7px;font-size:12px">🔧 操作区</div><div class="btn-group">';
-   if(t.status==='pending'){act+='<button class="btn btn-p btn-sm" onclick="acceptTask(\''+t.id+'\')">📥 接单处理</button>';act+='<button class="btn btn-o btn-sm" onclick="dispatchStaff(\''+t.id+'\')">👤 指派人员</button>';}
+   if(t.status==='pending'){if(admin.role==='super_admin'){act+='<button class="btn btn-p btn-sm" onclick="dispatchStaff(\''+t.id+'\')">👤 指派售后人员</button>';}else{act+='<button class="btn btn-p btn-sm" onclick="acceptTask(\''+t.id+'\')">📥 接单处理</button>';}}
    if(t.status==='processing'){act+='<button class="btn btn-w btn-sm" onclick="showQuotation(\''+t.id+'\')">💰 维修报价</button>';act+='<button class="btn btn-o btn-sm" onclick="showRepairTime(\''+t.id+'\')">🕐 维修时间</button>';act+='<button class="btn btn-s btn-sm" onclick="completeTask(\''+t.id+'\')">✅ 完成</button>';}
   act+='<button class="btn btn-o btn-sm" onclick="closeModal();manualOrder(\''+t.id+'\',\''+esc(t.customerPhone||'')+'\',\''+esc(t.customerName||t.factoryName||'')+'\')">📦 配件出库</button>';
    if(t.quotationStatus==='pending_approval'&&admin.role==='super_admin'){act+='<button class="btn btn-s btn-sm" onclick="approveQuotation(\''+t.id+'\')">✅ 审批</button>';act+='<button class="btn btn-d btn-sm" onclick="rejectQuotation(\''+t.id+'\')">❌ 拒绝</button>';}
    act+='<button class="btn btn-d btn-sm" onclick="if(confirm(\'确定取消工单？\'))cancelTask(\''+t.id+'\')">❌ 取消</button>';
    if(t.quotationStatus==='approved')act+='<button class="btn btn-o btn-sm" onclick="printWarrantyForm(\''+t.id+'\')">🖨️ 打印保修单</button>';
-   act+='</div><div class="fg" style="margin-top:8px"><label>处理备注</label><textarea id="resInp" style="min-height:45px">'+esc(t.resolution||'')+'</textarea><button class="btn btn-o btn-sm" style="margin-top:3px" onclick="saveRes(\''+t.id+'\')">💾 保存</button></div></div>';
+   act+='</div><div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px"><div style="font-weight:600;font-size:12px;margin-bottom:6px">📦 配件使用 <small style="color:var(--ts);font-weight:400">完成工单时自动出库</small></div><div id="taskParts_'+t.id+'">'+(t.repairItems&&t.repairItems.length?t.repairItems.map(function(p,i){return'<div style="font-size:11px;padding:3px 0;display:flex;gap:8px"><span>'+esc(p.partName)+'</span><span>×'+p.qty+'</span><span style="color:var(--d)">¥'+(p.unitPrice||0)+'</span><button class="btn btn-d btn-xs" onclick="removeTaskPart(\''+t.id+'\','+i+')">×</button></div>';}).join(''):'<div style="font-size:11px;color:var(--ts)">暂无配件使用记录</div>')+'</div><div style="display:flex;gap:4px;margin-top:4px"><select id="tpSelect_'+t.id+'" style="flex:1;padding:5px;border:1px solid var(--b);border-radius:4px;font-size:11px" onchange="tpFillPrice(\''+t.id+'\')"><option value="">选择库存配件</option></select><input type="number" id="tpPrice_'+t.id+'" placeholder="单价" style="width:55px;padding:5px;border:1px solid var(--b);border-radius:4px;font-size:11px"><input type="number" id="tpQty_'+t.id+'" value="1" min="1" style="width:40px;padding:5px;border:1px solid var(--b);border-radius:4px;font-size:11px"><button class="btn btn-s btn-xs" onclick="addTaskPart(\''+t.id+'\')">＋</button></div></div><div class="fg" style="margin-top:8px"><label>处理备注</label><textarea id="resInp" style="min-height:45px">'+esc(t.resolution||'')+'</textarea><button class="btn btn-o btn-sm" style="margin-top:3px" onclick="saveRes(\''+t.id+'\')">💾 保存</button></div></div>';
   }else{
    // 已完成：添加维修费 + 打印
    act='<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--b)"><div class="btn-group">';
@@ -433,7 +433,7 @@ function showRepairCost(id){
 }
 function saveRepairCost(e,id){e.preventDefault();var amt=parseFloat(document.getElementById('rcAmt').value)||0,note=document.getElementById('rcNote').value.trim();api('/api/tasks/'+id,'PUT',{repairCost:amt,note:'添加维修费用：¥'+amt+(note?'（'+note+'）':'')},true).then(function(r){if(r.ok){toast('维修费用已保存','s');closeModal();}else toast(r.msg,'e');});return false;}
 
-function acceptTask(id){api('/api/tasks/'+id,'PUT',{status:'processing',acceptTime:Date.now(),note:'售后人员接单，开始处理',repairStartTime:Date.now()},true).then(function(r){if(r.ok){toast('已接单','s');closeModal();}else toast(r.msg,'e');});}
+function acceptTask(id){api('/api/tasks/'+id,'PUT',{status:'processing',assignedTo:admin.id,assigneeName:admin.name,assigneePhone:admin.phone||'',acceptTime:Date.now(),note:admin.name+'已接单，开始处理',repairStartTime:Date.now()},true).then(function(r){if(r.ok){toast(admin.name+'已接单','s');closeModal();}else toast(r.msg,'e');});}
 function dispatchStaff(id){
  api('/api/admin/staff','GET',null,true).then(function(r){
   var staff=r.ok?r.data:[],opts='';for(var i=0;i<staff.length;i++)opts+='<option value="'+staff[i].id+'" data-name="'+esc(staff[i].name)+'" data-phone="'+esc(staff[i].phone||'')+'">'+esc(staff[i].name)+' ('+esc(staff[i].phone||'')+')</option>';
@@ -456,7 +456,79 @@ function rejectQuotation(id){if(!confirm('确认拒绝？'))return;api('/api/tas
 function showRepairTime(id){api('/api/tasks','GET',null,true).then(function(r){var t=null;for(var i=0;i<(r.data||[]).length;i++)if(r.data[i].id===id)t=r.data[i];var rs=(t&&t.repairStartTime?new Date(t.repairStartTime).toISOString().slice(0,16):''),re=(t&&t.repairEndTime?new Date(t.repairEndTime).toISOString().slice(0,16):'');document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>🕐 维修时间 · '+id+'</h3><form onsubmit="return saveRepairTime(event,\''+id+'\')"><div class="fr"><div class="fg"><label>开始时间</label><input type="text" id="rtStart" value="'+rs+'" placeholder="点击选择开始时间" readonly class="date-trigger" onclick="openDatePicker(\'rtStart\',\'datetime\')"></div><div class="fg"><label>结束时间</label><input type="text" id="rtEnd" value="'+re+'" placeholder="点击选择结束时间" readonly class="date-trigger" onclick="openDatePicker(\'rtEnd\',\'datetime\')"></div></div><button class="btn btn-p btn-block">保存</button></form>';document.getElementById('overlay').classList.add('show');});}
 function saveRepairTime(e,id){e.preventDefault();var st=document.getElementById('rtStart').value,et=document.getElementById('rtEnd').value,d={};if(st)d.repairStartTime=new Date(st).getTime();if(et)d.repairEndTime=new Date(et).getTime();api('/api/tasks/'+id,'PUT',d,true).then(function(r){if(r.ok){toast('已保存','s');closeModal();}});return false;}
 
-function completeTask(id){var res=document.getElementById('resInp');var note=(res?res.value.trim():'')||'维修已完成';api('/api/tasks/'+id,'PUT',{status:'completed',note:note,repairEndTime:Date.now()},true).then(function(r){if(r.ok){toast('工单已完成','s');closeModal();}});}
+function completeTask(id){
+ var res=document.getElementById('resInp');var note=(res?res.value.trim():'')||'维修已完成';
+ // 获取配件使用清单
+ var repairItems=[];var pid='taskParts_'+id;
+ var partsDiv=document.getElementById(pid);
+ if(partsDiv){
+  var rows=partsDiv.querySelectorAll('div[style]');
+  for(var r=0;r<rows.length;r++){
+   var txt=rows[r].textContent||'';
+   var m=txt.match(/(.+?)\s*×(\d+)\s*¥(\d+\.?\d*)/);
+   if(m)repairItems.push({partName:m[1].trim(),qty:parseInt(m[2]),unitPrice:parseFloat(m[3]),subtotal:parseInt(m[2])*parseFloat(m[3])});
+  }
+ }
+ var totalPartsCost=0;repairItems.forEach(function(p){totalPartsCost+=p.subtotal||0;});
+ api('/api/tasks/'+id,'PUT',{status:'completed',note:note,repairEndTime:Date.now(),repairItems:repairItems,repairCost:totalPartsCost},true).then(function(r){
+  if(r.ok){
+   // 自动减少配件库存
+   if(repairItems.length>0){
+    var done=0;
+    repairItems.forEach(function(p){
+     api('/api/parts','GET',null,true).then(function(pr){
+      if(!pr.ok)return;
+      var part=pr.data.find(function(x){return x.name===p.partName;});
+      if(part&&part.stock>=p.qty){
+       api('/api/parts/'+part.id+'/stock','POST',{type:'out',qty:p.qty},true).then(function(){done++;});
+      }
+     });
+    });
+   }
+   toast('工单已完成，配件已出库','s');closeModal();
+  }else toast(r.msg,'e');
+ });
+}
+// 任务配件操作
+function loadTaskParts(taskId){
+ api('/api/parts','GET',null,true).then(function(r){
+  var sel=document.getElementById('tpSelect_'+taskId);if(!sel)return;
+  sel.innerHTML='<option value="">选择库存配件</option>';
+  if(r.ok&&r.data){r.data.forEach(function(p){sel.innerHTML+='<option value="'+p.id+'" data-name="'+esc(p.name)+'" data-price="'+p.price+'">'+esc(p.name)+' · ¥'+p.price+'('+p.stock+')</option>';});}
+ });
+}
+function tpFillPrice(taskId){
+ var sel=document.getElementById('tpSelect_'+taskId);if(!sel)return;
+ var opt=sel.options[sel.selectedIndex];
+ var priceEl=document.getElementById('tpPrice_'+taskId);
+ if(opt&&opt.dataset.price)priceEl.value=opt.dataset.price;
+}
+function addTaskPart(taskId){
+ var sel=document.getElementById('tpSelect_'+taskId),price=document.getElementById('tpPrice_'+taskId),qty=document.getElementById('tpQty_'+taskId);
+ if(!sel||!price||!qty)return;
+ var opt=sel.options[sel.selectedIndex];var name=opt&&opt.dataset.name?opt.dataset.name:sel.value;
+ var pr=parseFloat(price.value)||0,qt=parseInt(qty.value)||1;
+ if(!name||pr<=0){toast('请选择配件并填写价格','e');return;}
+ // 保存到当前task的repairItems
+ var taskEl=document.getElementById('taskParts_'+taskId);if(!taskEl)return;
+ var existing=taskEl.querySelectorAll('div[style]');
+ var html='';var found=false;
+ for(var i=0;i<existing.length;i++){
+  var txt=existing[i].textContent||'';var m=txt.match(/(.+?)\s*×(\d+)\s*¥(\d+\.?\d*)/);
+  if(m&&m[1].trim()===name){
+   var newQt=parseInt(m[2])+qt;
+   html+='<div style="font-size:11px;padding:3px 0;display:flex;gap:8px"><span>'+esc(name)+'</span><span>×'+newQt+'</span><span style="color:var(--d)">¥'+pr.toFixed(2)+'</span><button class="btn btn-d btn-xs" onclick="removeTaskPart(\''+taskId+'\','+i+')">×</button></div>';
+   found=true;
+  }else{html+=existing[i].outerHTML;}
+ }
+ if(!found){html+='<div style="font-size:11px;padding:3px 0;display:flex;gap:8px"><span>'+esc(name)+'</span><span>×'+qt+'</span><span style="color:var(--d)">¥'+pr.toFixed(2)+'</span><button class="btn btn-d btn-xs" onclick="removeTaskPart(\''+taskId+'\','+existing.length+')">×</button></div>';}
+ taskEl.innerHTML=html;price.value='';qty.value='1';
+}
+function removeTaskPart(taskId,idx){
+ var taskEl=document.getElementById('taskParts_'+taskId);if(!taskEl)return;
+ var divs=taskEl.querySelectorAll('div[style]');if(divs[idx])divs[idx].remove();
+ if(taskEl.querySelectorAll('div[style]').length===0)taskEl.innerHTML='<div style="font-size:11px;color:var(--ts)">暂无配件使用记录</div>';
+}
 function cancelTask(id){api('/api/tasks/'+id,'PUT',{status:'cancelled',note:'工单已取消'},true).then(function(r){if(r.ok){toast('已取消','s');closeModal();}});}
 function saveRes(id){var r=document.getElementById('resInp').value.trim();if(!r)return;api('/api/tasks/'+id,'PUT',{resolution:r},true).then(function(x){if(x.ok){toast('已保存','s');closeModal();}});}
 function closeModal(){document.getElementById('overlay').classList.remove('show');showPage(_page);}
