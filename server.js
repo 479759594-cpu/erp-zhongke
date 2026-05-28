@@ -550,7 +550,7 @@ function handleAPI(req, res, pathname, method) {
       prompt += '请提供：1.问题可能原因 2.排查步骤 3.解决方案 4.注意事项。用中文回答，简洁实用。';
 
       var postData = JSON.stringify({
-        model: (d.globalSettings && d.globalSettings.doubaoModel) || 'doubao-1.5-pro-32k',
+        model: (d.globalSettings && d.globalSettings.doubaoModel) || 'doubao-2.0-pro-32k',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 2000,
         temperature: 0.3
