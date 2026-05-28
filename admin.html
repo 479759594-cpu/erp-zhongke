@@ -231,8 +231,42 @@ function toggleUserMenu(){
  var d=document.getElementById('userDrop');if(!d)return;
  if(d.classList.contains('show')){d.classList.remove('show');return;}
  var roleText=admin.role==='super_admin'?'系统管理员':'售后人员';
- d.innerHTML='<div class="u-info"><div class="un">'+esc(admin.name)+'</div><div class="up">👤 '+esc(admin.username)+' · '+roleText+(admin.phone?' · 📞 '+esc(admin.phone):'')+'</div></div><button class="u-act" onclick="refreshPage();toggleUserMenu()">🔄 刷新同步</button><button class="u-act danger" onclick="logout()">🚪 退出登录</button>';
+ d.innerHTML='<div class="u-info"><div class="un">'+esc(admin.name)+'</div><div class="up">👤 '+esc(admin.username)+' · '+roleText+(admin.phone?' · 📞 '+esc(admin.phone):'')+'</div></div><button class="u-act" onclick="refreshPage();toggleUserMenu()">🔄 刷新同步</button><button class="u-act" onclick="showSwitchAccount()">🔀 切换账号</button><button class="u-act danger" onclick="logout()">🚪 退出登录</button>';
  d.classList.add('show');
+}
+function showSwitchAccount(){
+ toggleUserMenu();
+ api('/api/admin/accounts','GET',null,true).then(function(r){
+  if(!r.ok)return;
+  var users=r.data,html='<button class="close" onclick="closeModal()">×</button><h3>🔀 切换账号</h3><p style="color:var(--ts);font-size:12px;margin-bottom:10px">选择要切换的账号（当前：'+esc(admin.name)+'）</p>';
+  for(var i=0;i<users.length;i++){
+   var u=users[i],isCur=(u.id===admin.id);
+   html+='<div style="padding:10px 12px;margin-bottom:4px;border:1px solid '+(isCur?'var(--p)':'var(--b)')+';border-radius:8px;background:'+(isCur?'var(--pl)':'#fff')+';cursor:'+(isCur?'default':'pointer')+'" onclick="'+(isCur?'':'switchToAccount(\''+u.id+'\')')+'"><div style="font-weight:600;font-size:13px">'+esc(u.name)+(isCur?' <span class="badge bg-b">当前</span>':'')+'</div><div style="font-size:11px;color:var(--ts)">'+esc(u.username)+' · '+(u.role==='super_admin'?'管理员':'售后人员')+'</div></div>';
+  }
+  document.getElementById('modal').innerHTML=html;
+  document.getElementById('overlay').classList.add('show');
+ });
+}
+function switchToAccount(id){
+ api('/api/admin/accounts','GET',null,true).then(function(r){
+  if(!r.ok)return;
+  var u=null;for(var i=0;i<r.data.length;i++){if(r.data[i].id===id){u=r.data[i];break;}}
+  if(!u)return;
+  // Save current admin to localStorage for easy switching back
+  var prevAccounts=[];try{prevAccounts=JSON.parse(localStorage.getItem('zk_prev_accounts')||'[]');}catch(e){}
+  if(!prevAccounts.find(function(a){return a.id===admin.id;}))prevAccounts.push({id:admin.id,name:admin.name,username:admin.username,role:admin.role,token:admin.token});
+  localStorage.setItem('zk_prev_accounts',JSON.stringify(prevAccounts.slice(-5)));
+  // Switch: login as the target user (re-use existing token if available, otherwise use stored credentials)
+  // Since we're already admin, we can directly set the admin session
+  // We need the actual token though. Let's use a server endpoint or just prompt for password.
+  // For simplicity: use the admin's existing token to re-login
+  var pw=prompt('请输入 '+u.name+' 的登录密码以切换账号：');
+  if(!pw){closeModal();return;}
+  api('/api/admin/login','POST',{username:u.username,password:pw}).then(function(r2){
+   if(r2.ok){admin=r2.data;save();closeModal();toast('已切换到 '+admin.name,'s');showPage('dashboard');}
+   else toast(r2.msg||'密码错误','e');
+  });
+ });
 }
 function refreshPage(){if(admin.token){showPage('dashboard');toast('已刷新','s');}else{showLogin();toast('已刷新，请登录','i');}}
 document.addEventListener('click',function(e){var d=document.getElementById('userDrop');if(d&&d.classList.contains('show')&&!e.target.closest('.topbar'))d.classList.remove('show');});
@@ -262,13 +296,13 @@ function logout(){admin={};save();showLogin();}
 var _page='dashboard';
 function renderNav(){
  var items=[{id:'dashboard',icon:'📊',label:'工作台'},{id:'tasks',icon:'📋',label:'报修任务'},{id:'parts',icon:'🛒',label:'配件管理'},{id:'orders',icon:'📦',label:'出库订单'}];
- if(admin.role==='super_admin'){items.push({id:'customers',icon:'🏭',label:'客户管理'},{id:'accounts',icon:'👥',label:'账号管理'});items.push({id:'audit',icon:'📝',label:'操作日志'});items.push({id:'settings',icon:'⚙️',label:'系统设置'});}
+ if(admin.role==='super_admin'){items.push({id:'customers',icon:'🏭',label:'客户管理'},{id:'accounts',icon:'👥',label:'账号管理'});items.push({id:'audit',icon:'📝',label:'操作日志'});items.push({id:'monthly',icon:'📊',label:'费用月报'});items.push({id:'settings',icon:'⚙️',label:'系统设置'});}
  var html='';for(var i=0;i<items.length;i++)html+='<button class="s-item '+(_page===items[i].id?'active':'')+'" onclick="showPage(\''+items[i].id+'\')"><span>'+items[i].icon+'</span><span>'+items[i].label+'</span></button>';
  document.getElementById('sideNav').innerHTML=html;
  document.getElementById('topBar').innerHTML='<button class="u-btn" onclick="toggleUserMenu()"><span class="avatar">'+esc(admin.name).charAt(0)+'</span><span>'+esc(admin.name)+'</span></button><button class="u-btn refresh" onclick="refreshPage()" id="refreshBtn" title="刷新同步">🔄</button><div class="u-drop" id="userDrop"></div>';
 }
 function showPage(p){_page=p;if(!admin.token){showLogin();return;}renderNav();
- if(p==='dashboard')dashPage();else if(p==='tasks')tasksPage();else if(p==='parts')partsPage();else if(p==='orders')ordersPage();else if(p==='customers')customersPage();else if(p==='accounts')accountsPage();else if(p==='audit')auditPage();else if(p==='settings')settingsPage();
+ if(p==='dashboard')dashPage();else if(p==='tasks')tasksPage();else if(p==='parts')partsPage();else if(p==='orders')ordersPage();else if(p==='customers')customersPage();else if(p==='accounts')accountsPage();else if(p==='audit')auditPage();else if(p==='monthly')monthlyPage();else if(p==='settings')settingsPage();
 }
 
 // ====== 工作台 ======
@@ -708,6 +742,44 @@ function loadAudit(){
  });
 }
 
+// ====== 费用月报 ======
+var _repMonth='';
+function monthlyPage(){
+ var now=new Date();_repMonth=String(now.getFullYear())+'-'+String(now.getMonth()+1).padStart(2,'0');
+ var monthOpts='';for(var y=2024;y<=now.getFullYear();y++){for(var m=1;m<=12;m++){var v=y+'-'+String(m).padStart(2,'0');if(y===now.getFullYear()&&m>now.getMonth()+1)break;monthOpts+='<option value="'+v+'"'+(v===_repMonth?' selected':'')+'>'+y+'年'+m+'月</option>';}}
+ document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>📊 费用月报</h3><div class="date-picker"><select id="rmMonth" onchange="_repMonth=this.value;loadMonthly()" style="padding:6px 10px;border:1px solid var(--b);border-radius:6px;font-size:13px">'+monthOpts+'</select><button class="btn btn-p btn-xs" onclick="window.print()">🖨️ 打印月报</button></div></div><div id="monthlyData"><div class="emp">加载中...</div></div></div>';
+ loadMonthly();
+}
+function loadMonthly(){
+ if(!_repMonth)return;
+ var parts=_repMonth.split('-');var sy=parseInt(parts[0]),sm=parseInt(parts[1]);
+ var ms=new Date(sy,sm-1,1).getTime(),me=new Date(sy,sm,0,23,59,59,999).getTime();
+ Promise.all([api('/api/tasks','GET',null,true),api('/api/orders','GET',null,true)]).then(function(r){
+  var tasks=(r[0].ok?r[0].data:[]).filter(function(t){return t.createdAt>=ms&&t.createdAt<=me;});
+  var orders=(r[1].ok?r[1].data:[]).filter(function(o){return o.createdAt>=ms&&o.createdAt<=me;});
+  var repCost=0,repPaid=0,orderTotal=0,orderPaid=0;
+  tasks.forEach(function(t){if(t.repairCost)repCost+=t.repairCost;if(t.quotationStatus==='approved'&&t.quotation)repPaid+=t.quotation;});
+  orders.forEach(function(o){orderTotal+=o.total||0;if(o.status==='paid'||o.status==='shipped'||o.status==='received')orderPaid+=o.total||0;});
+  var tRows='';tasks.forEach(function(t){
+   var st={pending:'待处理',processing:'处理中',completed:'已完成',cancelled:'已取消'};
+   var cost=t.repairCost||t.quotation||0;
+   tRows+='<tr style="cursor:pointer" onclick="taskDetail(\''+t.id+'\')"><td><strong>'+t.id+'</strong></td><td>'+esc(t.customerName||t.customerPhone)+'</td><td>'+esc(t.machineType||'')+'</td><td><span class="badge '+(t.status==='completed'?'bg-g':'bg-b')+'">'+(st[t.status]||t.status)+'</span></td><td style="color:'+(cost>0?'var(--d)':'var(--ts)')+';font-weight:600">'+(cost>0?'¥'+cost.toFixed(2):'-')+'</td><td>'+fmtD(t.createdAt)+'</td><td><button class="btn btn-o btn-xs" onclick="event.stopPropagation();printWarrantyForm(\''+t.id+'\')">🖨️</button></td></tr>';
+  });
+  var oRows='';orders.forEach(function(o){
+   var stT;if(o.status==='pending_payment')stT='待付款';else if(o.status==='paid')stT='已付款';else if(o.status==='shipped')stT='已发货';else if(o.status==='received')stT='已签收';else stT=o.status;
+   oRows+='<tr style="cursor:pointer" onclick="orderDetail(\''+o.id+'\')"><td><strong>'+o.id+'</strong></td><td>'+esc(o.customerName||o.customerPhone||'')+'</td><td>'+esc(o.outboundBy||'')+'</td><td>¥'+o.total.toFixed(2)+'</td><td><span class="badge '+(o.status==='received'||o.status==='shipped'?'bg-g':'bg-b')+'">'+stT+'</span></td><td>'+fmtD(o.createdAt)+'</td><td><button class="btn btn-p btn-xs" onclick="event.stopPropagation();printOrder(\''+o.id+'\')">🖨️</button></td></tr>';
+  });
+  var html='<div class="stats" style="margin-bottom:16px">';
+  html+='<div class="stat"><div class="s-icon r">🔧</div><div><div class="s-num">'+tasks.length+'</div><div class="s-label">报修工单</div></div></div>';
+  html+='<div class="stat"><div class="s-icon o">💰</div><div><div class="s-num">¥'+repCost.toFixed(2)+'</div><div class="s-label">报修费用合计</div></div></div>';
+  html+='<div class="stat"><div class="s-icon b">📦</div><div><div class="s-num">'+orders.length+'</div><div class="s-label">配件订单</div></div></div>';
+  html+='<div class="stat"><div class="s-icon g">💳</div><div><div class="s-num">¥'+orderTotal.toFixed(2)+'</div><div class="s-label">配件销售合计</div></div></div>';
+  html+='<div class="stat" style="grid-column:1/-1"><div class="s-icon p">📊</div><div><div class="s-num" style="font-size:18px;color:var(--d)">¥'+((repCost||repPaid)+orderTotal).toFixed(2)+'</div><div class="s-label">月度总计（报修'+repCost.toFixed(2)+' + 配件'+orderTotal.toFixed(2)+'）</div></div></div></div>';
+  html+='<div class="card"><div class="card-head"><h3>🔧 报修工单 · '+tasks.length+' 条 <small style="color:var(--ts);font-weight:400">点击行查看详情</small></h3></div>'+(tRows?'<div style="overflow-x:auto"><table><thead><tr><th>工单号</th><th>客户</th><th>设备</th><th>状态</th><th>费用</th><th>日期</th><th>操作</th></tr></thead><tbody>'+tRows+'</tbody></table></div>':'<div class="emp">本月无报修记录</div>')+'</div>';
+  html+='<div class="card"><div class="card-head"><h3>📦 配件订单 · '+orders.length+' 条 <small style="color:var(--ts);font-weight:400">点击行查看详情</small></h3></div>'+(oRows?'<div style="overflow-x:auto"><table><thead><tr><th>订单号</th><th>客户</th><th>操作人</th><th>金额</th><th>状态</th><th>日期</th><th>操作</th></tr></thead><tbody>'+oRows+'</tbody></table></div>':'<div class="emp">本月无配件订单</div>')+'</div>';
+  document.getElementById('monthlyData').innerHTML=html;
+ });
+}
 // ====== SETTINGS ======
 function settingsPage(){api('/api/settings','GET',null,true).then(function(r){var s=r.ok?r.data:{};document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>⚙️ 系统设置</h3></div><form onsubmit="return saveSet(event)"><div class="fr"><div class="fg"><label>公司名称</label><input type="text" id="setCN" value="'+esc(s.companyName||'')+'"></div><div class="fg"><label>公司简称</label><input type="text" id="setCS" value="'+esc(s.companyShort||'')+'"></div></div><div class="fr"><div class="fg"><label>公司地址</label><input type="text" id="setCA" value="'+esc(s.companyAddress||'')+'"></div><div class="fg"><label>公司电话</label><input type="text" id="setCP" value="'+esc(s.companyPhone||'')+'"></div></div><div class="fg"><label>收款二维码URL</label><input type="text" id="setQR" value="'+esc(s.paymentQR||'')+'"></div><button class="btn btn-p btn-block">保存设置</button></form></div>';});}
 function saveSet(e){e.preventDefault();var cn=document.getElementById('setCN').value.trim(),cs=document.getElementById('setCS').value.trim(),ca=document.getElementById('setCA').value.trim(),cp=document.getElementById('setCP').value.trim(),qr=document.getElementById('setQR').value.trim();api('/api/settings','PUT',{companyName:cn,companyShort:cs,companyAddress:ca,companyPhone:cp,paymentQR:qr},true).then(function(r){if(r.ok){toast('已保存','s');showPage('settings');}});return false;}
