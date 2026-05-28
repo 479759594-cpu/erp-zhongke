@@ -526,7 +526,7 @@ function handleAPI(req, res, pathname, method) {
   if (pathname === '/api/admin/accounts' && method === 'POST') { var adm7 = checkAuth(req, d); if (!adm7 || adm7.role !== 'super_admin') return sendJSON(res, 401); parseBody(req, function(b) { if (!b || !b.username || !b.password) return sendJSON(res, 400, { ok: false, msg: '参数不完整' }); if (d.adminUsers.find(function(u) { return u.username === b.username; })) return sendJSON(res, 400, { ok: false, msg: '用户名已存在' }); d.adminUsers.push({ id: 'admin_' + Date.now(), username: b.username, password: hashPassword(b.password), name: b.name, role: b.role || 'staff', phone: b.phone || '', mustChangePwd: true, createdAt: Date.now() }); saveData(d); sendJSON(res, 200, { ok: true }); }); return true; }
   if (pathname.match(/^\/api\/admin\/accounts\/[^\/]+$/) && method === 'PUT') { var aid = pathname.split('/')[3]; var admA = checkAuth(req, d); if (!admA || admA.role !== 'super_admin') return sendJSON(res, 401); parseBody(req, function(b) { for (var i = 0; i < d.adminUsers.length; i++) { if (d.adminUsers[i].id === aid) { if (b.password !== undefined) d.adminUsers[i].password = hashPassword(b.password); if (b.phone !== undefined) d.adminUsers[i].phone = b.phone; if (b.name !== undefined) d.adminUsers[i].name = b.name; if (b.username !== undefined) d.adminUsers[i].username = b.username; break; } } saveData(d); sendJSON(res, 200, { ok: true }); }); return true; }
   if (pathname === '/api/settings' && method === 'GET') { sendJSON(res, 200, { ok: true, data: d.globalSettings || {} }); return true; }
-  if (pathname === '/api/settings' && method === 'PUT') { var adm8 = checkAuth(req, d); if (!adm8 || adm8.role !== 'super_admin') return sendJSON(res, 401); parseBody(req, function(b) { if (!d.globalSettings) d.globalSettings = {}; if (b.paymentQR !== undefined) d.globalSettings.paymentQR = b.paymentQR; if (b.companyName !== undefined) d.globalSettings.companyName = b.companyName; if (b.companyShort !== undefined) d.globalSettings.companyShort = b.companyShort; if (b.companyAddress !== undefined) d.globalSettings.companyAddress = b.companyAddress; if (b.companyPhone !== undefined) d.globalSettings.companyPhone = b.companyPhone; saveData(d); sendJSON(res, 200, { ok: true }); }); return true; }
+  if (pathname === '/api/settings' && method === 'PUT') { var adm8 = checkAuth(req, d); if (!adm8 || adm8.role !== 'super_admin') return sendJSON(res, 401); parseBody(req, function(b) { if (!d.globalSettings) d.globalSettings = {}; if (b.paymentQR !== undefined) d.globalSettings.paymentQR = b.paymentQR; if (b.companyName !== undefined) d.globalSettings.companyName = b.companyName; if (b.companyShort !== undefined) d.globalSettings.companyShort = b.companyShort; if (b.companyAddress !== undefined) d.globalSettings.companyAddress = b.companyAddress; if (b.companyPhone !== undefined) d.globalSettings.companyPhone = b.companyPhone; if (b.doubaoApiKey !== undefined) d.globalSettings.doubaoApiKey = b.doubaoApiKey; saveData(d); sendJSON(res, 200, { ok: true }); }); return true; }
   if (pathname === '/api/admin/audit' && method === 'GET') { var admAud = checkAuth(req, d); if (!admAud || admAud.role !== 'super_admin') return sendJSON(res, 401); var qa = url.parse(req.url, true).query || {}; var page = parseInt(qa.page) || 1, limit = Math.min(parseInt(qa.limit) || 50, 200); var audits = loadAudit(); if (qa.type) audits = audits.filter(function(x) { return x.type === qa.type; }); if (qa.phone) audits = audits.filter(function(x) { return x.phone === qa.phone; }); if (qa.startDate) audits = audits.filter(function(x) { return x.time >= new Date(qa.startDate).getTime(); }); if (qa.endDate) audits = audits.filter(function(x) { return x.time < new Date(qa.endDate).getTime() + 86400000; }); audits.sort(function(a, b) { return b.time - a.time; }); sendJSON(res, 200, { ok: true, data: audits.slice((page-1)*limit, page*limit), total: audits.length, page: page, limit: limit }); return true; }
   if (pathname === '/api/admin/staff-performance' && method === 'GET') {
     var admPerf = checkAuth(req, d); if (!admPerf || admPerf.role !== 'super_admin') return sendJSON(res, 401); var qp2 = url.parse(req.url, true).query || {}; var staffId = qp2.staffId || '', startDate = qp2.startDate ? new Date(qp2.startDate).getTime() : 0, endDate = qp2.endDate ? new Date(qp2.endDate).getTime() + 86400000 : Date.now() + 86400000; var tasks = d.repairTasks || [], result = [];
@@ -534,6 +534,70 @@ function handleAPI(req, res, pathname, method) {
     result.sort(function(a, b) { return b.time - a.time; }); var dailyStats = {}; for (var k = 0; k < result.length; k++) { var r = result[k]; var day = new Date(r.time).toISOString().slice(0, 10); if (!dailyStats[day]) dailyStats[day] = { date: day, count: 0, completed: 0, details: [] }; dailyStats[day].count++; if (r.status === 'completed') dailyStats[day].completed++; dailyStats[day].details.push(r); }
     sendJSON(res, 200, { ok: true, data: { totalActions: result.length, dailyStats: Object.values(dailyStats).sort(function(a,b){return b.date.localeCompare(a.date);}).slice(0,60), details: result.slice(0,200) } }); return true;
   }
+  // ==================== AI自助查询（豆包模型） ====================
+  if (pathname === '/api/ai-search' && method === 'POST') {
+    parseBody(req, function(b) {
+      if (!b || !b.query) return sendJSON(res, 400, { ok: false, msg: '请输入查询内容' });
+      var apiKey = (d.globalSettings && d.globalSettings.doubaoApiKey) || '';
+      if (!apiKey) return sendJSON(res, 400, { ok: false, msg: 'AI查询未配置，请联系管理员在系统设置中配置豆包API密钥' });
+      var machineType = b.machineType || '';
+      var component = b.component || '';
+      var query = b.query || '';
+      var prompt = '你是中科数控设备售后维修专家助手。请针对以下设备问题提供解决方案：\n';
+      if (machineType) prompt += '设备类型：' + machineType + '\n';
+      if (component) prompt += '故障部位/组件：' + component + '\n';
+      prompt += '问题描述：' + query + '\n';
+      prompt += '请提供：1.问题可能原因 2.排查步骤 3.解决方案 4.注意事项。用中文回答，简洁实用。';
+
+      var postData = JSON.stringify({
+        model: 'doubao-pro-32k',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 2000,
+        temperature: 0.3
+      });
+      var https = require('https');
+      var urlModule = require('url');
+      var apiUrl = urlModule.parse('https://ark.cn-beijing.volces.com/api/v3/chat/completions');
+      var req2 = https.request({
+        hostname: apiUrl.hostname,
+        path: apiUrl.path,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + apiKey
+        },
+        timeout: 30000
+      }, function(res2) {
+        var body = '';
+        res2.on('data', function(c) { body += c; });
+        res2.on('end', function() {
+          try {
+            var result = JSON.parse(body);
+            if (result.choices && result.choices[0]) {
+              sendJSON(res, 200, { ok: true, data: { answer: result.choices[0].message.content, model: result.model || 'doubao' } });
+            } else if (result.error) {
+              sendJSON(res, 500, { ok: false, msg: 'AI查询失败：' + (result.error.message || result.error.code || '未知错误') });
+            } else {
+              sendJSON(res, 500, { ok: false, msg: 'AI返回格式异常，请稍后重试' });
+            }
+          } catch(e) {
+            sendJSON(res, 500, { ok: false, msg: 'AI响应解析失败' });
+          }
+        });
+      });
+      req2.on('error', function(e) {
+        sendJSON(res, 500, { ok: false, msg: 'AI服务连接失败：' + e.message });
+      });
+      req2.on('timeout', function() {
+        req2.destroy();
+        sendJSON(res, 500, { ok: false, msg: 'AI服务请求超时，请稍后重试' });
+      });
+      req2.write(postData);
+      req2.end();
+    });
+    return true;
+  }
+
   if (pathname === '/api/server-stats' && method === 'GET') { var dailyData = Object.keys(SERVER_STATS.dailyVisits).sort().reverse().slice(0, 7).map(function(dk) { return { date: dk, count: SERVER_STATS.dailyVisits[dk].count, uniqueIPs: Object.keys(SERVER_STATS.dailyVisits[dk].ips).length }; }); sendJSON(res, 200, { ok: true, data: { uptime: getUptime(), startTime: SERVER_STATS.startTime, totalRequests: SERVER_STATS.totalRequests, apiRequests: SERVER_STATS.apiRequests, todayCount: SERVER_STATS.todayCount, uniqueIPsTotal: Object.keys(SERVER_STATS.uniqueIPs).length, dailyStats: dailyData } }); return true; }
   if (pathname === '/api/stats' && method === 'GET') {
     var adm9 = checkAuth(req, d); if (!adm9) return sendJSON(res, 401); var tasks = d.repairTasks || [], stats = { totalTasks: tasks.length, pending: tasks.filter(function(t){return t.status==='pending';}).length, processing: tasks.filter(function(t){return t.status==='processing';}).length, completed: tasks.filter(function(t){return t.status==='completed';}).length, totalOrders: (d.outboundOrders||[]).length, pendingPayment: (d.outboundOrders||[]).filter(function(o){return o.status==='pending_payment';}).length, paid: (d.outboundOrders||[]).filter(function(o){return o.status==='paid';}).length, totalParts: (d.parts||[]).length, inWarranty: tasks.filter(function(t){return calcWarranty(t.manufactureDate,t.faultDescription)==='in_warranty';}).length, outWarranty: tasks.filter(function(t){return calcWarranty(t.manufactureDate,t.faultDescription)==='out_warranty';}).length, pendingQuotation: tasks.filter(function(t){return t.quotationStatus==='pending_approval';}).length, staffStats: {}, customerCount: Object.keys(d.customerInfo||{}).length };

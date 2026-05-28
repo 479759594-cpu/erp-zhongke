@@ -358,6 +358,7 @@ function showDashboard(tab){_tab=tab||_tab;if(!sess.phone){showLogin();return;}u
    '</div>'+
    '<div class="tabs">'+
    '<button class="tab '+(_tab==='repair'?'active':'')+'" onclick="showDashboard(\'repair\')">🔧 设备报修</button>'+
+   '<button class="tab '+(_tab==='selfhelp'?'active':'')+'" onclick="showDashboard(\'selfhelp\')">🔍 自助查询</button>'+
    '<button class="tab '+(_tab==='parts'?'active':'')+'" onclick="showDashboard(\'parts\')">🛒 配件选购</button>'+
    '<button class="tab '+(_tab==='history'?'active':'')+'" onclick="showDashboard(\'history\')">📜 报修记录</button>'+
    '<button class="tab '+(_tab==='orders'?'active':'')+'" onclick="showDashboard(\'orders\')">📦 订单中心</button>'+
@@ -365,6 +366,7 @@ function showDashboard(tab){_tab=tab||_tab;if(!sess.phone){showLogin();return;}u
    '</div><div id="tabBody"></div>';
 
   if(_tab==='repair')repairForm();
+  else if(_tab==='selfhelp')selfHelpPage();
   else if(_tab==='parts')partsShop(parts);
   else if(_tab==='history')historyList(tasks);
   else if(_tab==='orders')orderList(orders);
@@ -395,6 +397,63 @@ function pfUpdateDistricts(){
 }
 function saveProfile(e){e.preventDefault();var fn=document.getElementById('pfFn').value.trim(),prov=document.getElementById('pfProv').value,city=document.getElementById('pfCity').value,dist=document.getElementById('pfDist').value,ad=document.getElementById('pfAd').value.trim();if(!fn||!ad){toast('请填写工厂名称和详细地址','e');return false;}api('/api/customer/info','PUT',{phone:sess.phone,factoryName:fn,province:prov,city:city,district:dist,detailAddress:ad,address:prov+' '+city+' '+dist+' '+ad}).then(function(r){if(r.ok){sess.info=r.data;save();toast('信息已保存','s');showDashboard('profile');}});return false;}
 
+// ====== 自助查询 ======
+var _shMach='',_shComp='';
+function selfHelpPage(){
+ var machOpts='<option value="">请选择设备类型</option>';
+ ['光纤激光切割机','门友软件'].forEach(function(m){machOpts+='<option value="'+m+'"'+(_shMach===m?' selected':'')+'>'+m+'</option>';});
+ var compData={
+  '光纤激光切割机':['激光器（创鑫/锐科/IPG）','切割头（普雷斯特/万顺兴）','伺服电机（松下/安川/台达）','伺服控制器','柏楚切割系统','低压控制电路','电气线路/控制线路','冷却系统（水冷机）','气路系统（辅助气体）','光路系统（镜片/光纤）','床身/工作台','其他'],
+  '门友软件':['软件安装/激活','数据对接问题','报表/打印问题','操作培训','软件升级/更新','系统兼容性','其他']
+ };
+ var compOpts='<option value="">请先选择设备类型</option>';
+ if(_shMach&&compData[_shMach]){compData[_shMach].forEach(function(c){compOpts+='<option value="'+c+'"'+(_shComp===c?' selected':'')+'>'+c+'</option>';});}
+ var links='';
+ if(_shMach==='光纤激光切割机'){
+  links='<div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px;font-size:11px">'+
+   '<strong>🔗 外部资源链接：</strong><br>'+
+   '<a href="https://www.maxphotonics.com/" target="_blank" style="color:var(--p);margin-right:10px">🔗 创鑫激光官网</a>'+
+   '<a href="https://www.zaoshu.so/search?keyword=光纤激光切割机维修" target="_blank" style="color:var(--p);margin-right:10px">🔍 抖音搜索维修教程</a>'+
+   '<a href="https://www.baidu.com/s?wd=光纤激光切割机+维修" target="_blank" style="color:var(--p);margin-right:10px">🌐 百度搜索</a>'+
+   '<a href="http://www.bc-sys.com/" target="_blank" style="color:var(--p)">🔗 柏楚电子官网</a>'+
+   '</div>';
+ }else if(_shMach==='门友软件'){
+  links='<div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px;font-size:11px">'+
+   '<strong>🔗 外部资源链接：</strong><br>'+
+   '<a href="https://www.baidu.com/s?wd=门友软件+常见问题" target="_blank" style="color:var(--p);margin-right:10px">🌐 百度搜索门友软件</a>'+
+   '<a href="https://www.zaoshu.so/search?keyword=门友软件教程" target="_blank" style="color:var(--p)">🔍 抖音搜索教程</a>'+
+   '</div>';
+ }
+ document.getElementById('tabBody').innerHTML=
+  '<div class="card"><h3 style="font-size:15px;margin-bottom:6px">🔍 自助故障查询</h3><p style="color:var(--ts);font-size:11px;margin-bottom:12px">选择设备类型和故障部位，AI将为您提供排查方案（使用豆包AI模型）</p>'+
+  '<div class="fr"><div class="fg"><label>设备类型</label><select id="shMach" onchange="_shMach=this.value;_shComp=\'\';selfHelpPage()">'+machOpts+'</select></div>'+
+  '<div class="fg"><label>故障部位/组件</label><select id="shComp" onchange="_shComp=this.value">'+compOpts+'</select></div></div>'+
+  '<div class="fg"><label>问题描述</label><textarea id="shQuery" rows="3" placeholder="请描述您遇到的问题现象...例如：激光器不亮、切割有毛刺、软件无法打开等"></textarea></div>'+
+  '<button class="btn btn-p btn-block" onclick="doAISearch()" id="shBtn">🤖 AI智能查询</button>'+
+  links+
+  '<div id="shResult" style="margin-top:12px"></div></div>';
+}
+function doAISearch(){
+ var mach=document.getElementById('shMach').value,comp=document.getElementById('shComp').value,query=document.getElementById('shQuery').value.trim();
+ if(!query){toast('请描述问题现象','e');return;}
+ var btn=document.getElementById('shBtn');btn.disabled=true;btn.textContent='🤖 AI查询中，请稍候...';
+ document.getElementById('shResult').innerHTML='<div class="emp">🤖 正在调用豆包AI模型查询，请稍候...</div>';
+ api('/api/ai-search','POST',{machineType:mach,component:comp,query:query}).then(function(r){
+  btn.disabled=false;btn.textContent='🤖 AI智能查询';
+  if(r.ok&&r.data){
+   document.getElementById('shResult').innerHTML=
+    '<div class="card" style="border-left:3px solid var(--p);background:#fafbff"><div style="font-size:11px;color:var(--ts);margin-bottom:6px">🤖 豆包AI · 仅供参考</div>'+
+    '<div style="white-space:pre-wrap;line-height:1.8;font-size:13px">'+esc(r.data.answer)+'</div>'+
+    '<div style="margin-top:8px;font-size:10px;color:var(--ts)">以上为AI建议，如问题仍未解决请提交报修工单</div>'+
+    '<button class="btn btn-p btn-sm" style="margin-top:8px" onclick="showDashboard(\'repair\')">🔧 去报修</button></div>';
+  }else{
+   document.getElementById('shResult').innerHTML='<div class="card" style="border-left:3px solid var(--d)"><p style="color:var(--d);font-size:13px;margin-bottom:6px">❌ '+esc(r.msg||'查询失败')+'</p>'+(r.msg&&r.msg.indexOf('未配置')>=0?'<p style="font-size:11px;color:var(--ts)">请联系管理员在系统设置中配置豆包API密钥</p>':'<p style="font-size:11px;color:var(--ts)">请尝试使用外部资源链接搜索，或提交报修工单</p>')+'<button class="btn btn-p btn-sm" onclick="showDashboard(\'repair\')">🔧 去报修</button></div>';
+  }
+ }).catch(function(){
+  btn.disabled=false;btn.textContent='🤖 AI智能查询';
+  document.getElementById('shResult').innerHTML='<div class="card" style="border-left:3px solid var(--d)"><p style="color:var(--d)">❌ 网络连接失败，请稍后重试</p><button class="btn btn-p btn-sm" onclick="showDashboard(\'repair\')">🔧 去报修</button></div>';
+ });
+}
 // ====== 设备报修 ======
 function repairForm(){
  _photos=[];

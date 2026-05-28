@@ -466,11 +466,13 @@ function printWarrantyForm(id){
   if(!r.ok)return;var t=r.data,set=r.settings||{},now=new Date();
   var addr='';if(t.province)addr+=t.province;if(t.city)addr+=' '+t.city;if(t.district)addr+=' '+t.district;if(t.detailAddress)addr+=' '+t.detailAddress;if(!addr&&t.address)addr=t.address;
   var ws=t.warrantyStatus==='in_warranty'?'在保（'+(t.warrantyMonths||12)+'个月）':'已过保';
-  var html='<div style="max-width:720px;margin:0 auto;padding:35px 30px;font-family:\'SimSun\',\'宋体\',serif;font-size:12px;line-height:1.8">'+
-   '<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:15px">'+
+  var finishTime=t.repairEndTime||t.acceptTime||t.createdAt;
+var html='<div style="max-width:720px;margin:0 auto;padding:35px 30px;font-family:\'SimSun\',\'宋体\',serif;font-size:12px;line-height:1.8">'+
+   '<div style="position:relative;text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:15px">'+
+   '<div style="position:absolute;left:0;top:0;font-size:8px;color:#999;text-align:left">打印时间：'+fmtDt(now)+'</div>'+
    '<h2 style="margin:0;font-size:20px;letter-spacing:4px">'+esc(set.companyName||'广东中科数控科技有限公司')+'</h2>'+
    '<h3 style="margin:6px 0 0;font-size:16px;letter-spacing:3px">设备售后保修服务单</h3>'+
-   '<p style="margin:4px 0 0;font-size:10px;color:#666">NO: '+t.id+' &nbsp;|&nbsp; 日期: '+fmtDt(now)+'</p></div>'+
+   '<p style="margin:4px 0 0;font-size:10px;color:#666">NO: '+t.id+' &nbsp;|&nbsp; 日期: '+fmtDt(new Date(finishTime))+'</p></div>'+
    '<table style="width:100%;border-collapse:collapse;margin-bottom:12px"><tbody>'+
    '<tr><td style="padding:5px 8px;border:1px solid #000;width:16%;font-weight:bold;background:#f5f5f5">工单编号</td><td style="padding:5px 8px;border:1px solid #000;width:34%">'+t.id+'</td><td style="padding:5px 8px;border:1px solid #000;width:16%;font-weight:bold;background:#f5f5f5">保修状态</td><td style="padding:5px 8px;border:1px solid #000;width:34%">'+ws+'</td></tr>'+
    '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">客户名称</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.customerName||t.customerPhone)+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">联系电话</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.customerPhone||'-')+'</td></tr>'+
@@ -497,10 +499,13 @@ function printOrder(oid){
  api('/api/orders/'+oid+'/print','GET',null,true).then(function(r){
   if(!r.ok)return;var o=r.data,set=r.settings||{},now=new Date();
   var items='',n=1;for(var j=0;j<o.items.length;j++)items+='<tr><td style="padding:4px 8px;border:1px solid #000;text-align:center">'+(n++)+'</td><td style="padding:4px 8px;border:1px solid #000">'+esc(o.items[j].partName||'')+'</td><td style="padding:4px 8px;border:1px solid #000;text-align:right">¥'+o.items[j].unitPrice.toFixed(2)+'</td><td style="padding:4px 8px;border:1px solid #000;text-align:center">'+o.items[j].qty+'</td><td style="padding:4px 8px;border:1px solid #000;text-align:right">¥'+o.items[j].subtotal.toFixed(2)+'</td></tr>';
-  var html='<div style="max-width:700px;margin:0 auto;padding:30px 25px;font-family:\'SimSun\',\'宋体\',serif;font-size:12px">'+
-   '<h2 style="text-align:center;margin:0;font-size:18px;letter-spacing:4px">'+esc(set.companyName||'广东中科数控科技有限公司')+'</h2>'+
-   '<h3 style="text-align:center;margin:5px 0 12px;font-size:15px;letter-spacing:3px">配件出库单</h3>'+
-   '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px"><span><strong>出库单号：</strong>'+o.id+'</span><span><strong>日期：</strong>'+fmtDt(now)+'</span><span><strong>操作人：</strong>'+esc(o.outboundBy||'-')+'</span></div>'+
+  var orderDate=o.shippedAt||o.paidAt||o.createdAt;
+var html='<div style="max-width:700px;margin:0 auto;padding:30px 25px;font-family:\'SimSun\',\'宋体\',serif;font-size:12px">'+
+   '<div style="position:relative;text-align:center">'+
+   '<div style="position:absolute;left:0;top:0;font-size:8px;color:#999;text-align:left">打印时间：'+fmtDt(now)+'</div>'+
+   '<h2 style="margin:0;font-size:18px;letter-spacing:4px">'+esc(set.companyName||'广东中科数控科技有限公司')+'</h2>'+
+   '<h3 style="margin:5px 0 12px;font-size:15px;letter-spacing:3px">配件出库单</h3></div>'+
+   '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px"><span><strong>出库单号：</strong>'+o.id+'</span><span><strong>日期：</strong>'+fmtDt(new Date(orderDate))+'</span><span><strong>操作人：</strong>'+esc(o.outboundBy||'-')+'</span></div>'+
    '<div style="margin-bottom:4px;font-size:11px"><strong>客户：</strong>'+esc(o.customerName||'-')+' &nbsp; <strong>电话：</strong>'+esc(o.customerPhone||'-')+' &nbsp; <strong>工厂：</strong>'+esc(o.factoryName||'-')+'</div>'+
    '<table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr><th style="padding:4px 8px;border:1px solid #000;text-align:center;background:#f5f5f5">序号</th><th style="padding:4px 8px;border:1px solid #000;text-align:left;background:#f5f5f5">配件名称</th><th style="padding:4px 8px;border:1px solid #000;text-align:right;background:#f5f5f5">单价</th><th style="padding:4px 8px;border:1px solid #000;text-align:center;background:#f5f5f5">数量</th><th style="padding:4px 8px;border:1px solid #000;text-align:right;background:#f5f5f5">小计</th></tr></thead><tbody>'+items+'</tbody></table>'+
    '<div style="text-align:right;font-size:15px;font-weight:bold;margin-top:8px;padding-top:6px;border-top:2px solid #000">合计金额：¥'+o.total.toFixed(2)+'</div>'+
@@ -781,8 +786,8 @@ function loadMonthly(){
  });
 }
 // ====== SETTINGS ======
-function settingsPage(){api('/api/settings','GET',null,true).then(function(r){var s=r.ok?r.data:{};document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>⚙️ 系统设置</h3></div><form onsubmit="return saveSet(event)"><div class="fr"><div class="fg"><label>公司名称</label><input type="text" id="setCN" value="'+esc(s.companyName||'')+'"></div><div class="fg"><label>公司简称</label><input type="text" id="setCS" value="'+esc(s.companyShort||'')+'"></div></div><div class="fr"><div class="fg"><label>公司地址</label><input type="text" id="setCA" value="'+esc(s.companyAddress||'')+'"></div><div class="fg"><label>公司电话</label><input type="text" id="setCP" value="'+esc(s.companyPhone||'')+'"></div></div><div class="fg"><label>收款二维码URL</label><input type="text" id="setQR" value="'+esc(s.paymentQR||'')+'"></div><button class="btn btn-p btn-block">保存设置</button></form></div>';});}
-function saveSet(e){e.preventDefault();var cn=document.getElementById('setCN').value.trim(),cs=document.getElementById('setCS').value.trim(),ca=document.getElementById('setCA').value.trim(),cp=document.getElementById('setCP').value.trim(),qr=document.getElementById('setQR').value.trim();api('/api/settings','PUT',{companyName:cn,companyShort:cs,companyAddress:ca,companyPhone:cp,paymentQR:qr},true).then(function(r){if(r.ok){toast('已保存','s');showPage('settings');}});return false;}
+function settingsPage(){api('/api/settings','GET',null,true).then(function(r){var s=r.ok?r.data:{};document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>⚙️ 系统设置</h3></div><form onsubmit="return saveSet(event)"><div class="fr"><div class="fg"><label>公司名称</label><input type="text" id="setCN" value="'+esc(s.companyName||'')+'"></div><div class="fg"><label>公司简称</label><input type="text" id="setCS" value="'+esc(s.companyShort||'')+'"></div></div><div class="fr"><div class="fg"><label>公司地址</label><input type="text" id="setCA" value="'+esc(s.companyAddress||'')+'"></div><div class="fg"><label>公司电话</label><input type="text" id="setCP" value="'+esc(s.companyPhone||'')+'"></div></div><div class="fg"><label>收款二维码URL</label><input type="text" id="setQR" placeholder="收款二维码图片链接" value="'+esc(s.paymentQR||'')+'"></div><div class="fg"><label>豆包AI API Key <small style="color:var(--ts)">用于客户自助查询</small></label><input type="text" id="setDK" placeholder="从火山引擎ARK获取" value="'+esc(s.doubaoApiKey||'')+'"><p style="font-size:10px;color:var(--ts);margin-top:2px">获取地址：console.volcengine.com/ark → API密钥管理</p></div><button class="btn btn-p btn-block">保存设置</button></form></div>';});}
+function saveSet(e){e.preventDefault();var cn=document.getElementById('setCN').value.trim(),cs=document.getElementById('setCS').value.trim(),ca=document.getElementById('setCA').value.trim(),cp=document.getElementById('setCP').value.trim(),qr=document.getElementById('setQR').value.trim(),dk=document.getElementById('setDK').value.trim();api('/api/settings','PUT',{companyName:cn,companyShort:cs,companyAddress:ca,companyPhone:cp,paymentQR:qr,doubaoApiKey:dk},true).then(function(r){if(r.ok){toast('已保存','s');showPage('settings');}});return false;}
 
 document.getElementById('overlay').addEventListener('click',function(e){if(e.target===this)closeModal();});
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
