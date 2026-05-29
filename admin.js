@@ -1,0 +1,686 @@
+// 中科数控 · 售后管理后台 JS
+var API='',admin={};
+// 滚动日期选择器
+var _dpTarget=null,_dpYear=0,_dpMonth=0,_dpDay=0,_dpType='date',_dpHour=0,_dpMinute=0;
+function openDatePicker(targetId,type){
+ _dpTarget=document.getElementById(targetId);_dpType=type||'date';
+ var now=new Date();_dpYear=now.getFullYear();_dpMonth=now.getMonth()+1;_dpDay=now.getDate();
+ _dpHour=now.getHours();_dpMinute=Math.floor(now.getMinutes()/5)*5;
+ if(_dpTarget&&_dpTarget.value){
+  var parts=_dpTarget.value.split('-');if(parts.length>=3){_dpYear=parseInt(parts[0]);_dpMonth=parseInt(parts[1]);_dpDay=parseInt(parts[2]);}
+  if(_dpType==='datetime'){var m=_dpTarget.value.match(/T(\d{2}):(\d{2})/);if(m){_dpHour=parseInt(m[1]);_dpMinute=parseInt(m[2]);}}
+ }
+ renderDatePicker();document.getElementById('dpOverlay').classList.add('show');
+}
+function renderDatePicker(){
+ var cy=_dpYear,cm=_dpMonth,cd=_dpDay,ch=_dpHour,cmi=_dpMinute;
+ var yH='';for(var y=cy-50;y<=cy+5;y++)yH+='<div class="dp-item'+(y===cy?' selected':'')+'" onclick="pickDP(\'y\','+y+')">'+y+'年</div>';
+ var mH='';for(var m=1;m<=12;m++)mH+='<div class="dp-item'+(m===cm?' selected':'')+'" onclick="pickDP(\'m\','+m+')">'+String(m).padStart(2,'0')+'月</div>';
+ var maxD=new Date(cy,cm,0).getDate();if(cd>maxD)cd=_dpDay=maxD;
+ var dH='';for(var d=1;d<=maxD;d++)dH+='<div class="dp-item'+(d===cd?' selected':'')+'" onclick="pickDP(\'d\','+d+')">'+String(d).padStart(2,'0')+'日</div>';
+ var cols='<div class="dp-col" id="dpColY">'+yH+'</div><div class="dp-col" id="dpColM">'+mH+'</div><div class="dp-col" id="dpColD">'+dH+'</div>';
+ if(_dpType==='datetime'){
+  var hH='';for(var h=0;h<24;h++)hH+='<div class="dp-item'+(h===ch?' selected':'')+'" onclick="pickDP(\'h\','+h+')">'+String(h).padStart(2,'0')+'时</div>';
+  var miH='';for(var mi=0;mi<60;mi+=5)miH+='<div class="dp-item'+(mi===cmi?' selected':'')+'" onclick="pickDP(\'mi\','+mi+')">'+String(mi).padStart(2,'0')+'分</div>';
+  cols+='<div class="dp-col" id="dpColH">'+hH+'</div><div class="dp-col" id="dpColMi">'+miH+'</div>';
+ }
+ document.getElementById('dpColumns').innerHTML=cols;
+ requestAnimationFrame(function(){
+  scrollToSel('dpColY');scrollToSel('dpColM');scrollToSel('dpColD');
+  if(_dpType==='datetime'){scrollToSel('dpColH');scrollToSel('dpColMi');}
+ });
+}
+function scrollToSel(id){var c=document.getElementById(id);if(!c)return;var s=c.querySelector('.dp-item.selected');if(s)s.scrollIntoView({behavior:'instant',block:'center'});}
+function pickDP(type,val){
+ if(type==='y')_dpYear=val;else if(type==='m')_dpMonth=val;else if(type==='d')_dpDay=val;else if(type==='h')_dpHour=val;else if(type==='mi')_dpMinute=val;
+ renderDatePicker();
+}
+function closeDatePicker(){document.getElementById('dpOverlay').classList.remove('show');_dpTarget=null;}
+function confirmDatePicker(){
+ if(!_dpTarget)return;
+ var v=_dpYear+'-'+String(_dpMonth).padStart(2,'0')+'-'+String(_dpDay).padStart(2,'0');
+ if(_dpType==='datetime')v+='T'+String(_dpHour).padStart(2,'0')+':'+String(_dpMinute).padStart(2,'0');
+ _dpTarget.value=v;_dpTarget.dispatchEvent(new Event('input',{bubbles:true}));closeDatePicker();
+}
+// 用户下拉菜单
+function toggleUserMenu(){
+ var d=document.getElementById('userDrop');if(!d)return;
+ if(d.classList.contains('show')){d.classList.remove('show');return;}
+ var roleText=admin.role==='super_admin'?'系统管理员':'售后人员';
+ d.innerHTML='<div class="u-info"><div class="un">'+esc(admin.name)+'</div><div class="up">👤 '+esc(admin.username)+' · '+roleText+(admin.phone?' · 📞 '+esc(admin.phone):'')+'</div></div><button class="u-act" onclick="refreshPage();toggleUserMenu()">🔄 刷新同步</button><button class="u-act" onclick="showSwitchAccount()">🔀 切换账号</button><button class="u-act danger" onclick="logout()">🚪 退出登录</button>';
+ d.classList.add('show');
+}
+function showSwitchAccount(){
+ toggleUserMenu();
+ api('/api/admin/accounts','GET',null,true).then(function(r){
+  if(!r.ok)return;
+  var users=r.data,html='<button class="close" onclick="closeModal()">×</button><h3>🔀 切换账号</h3><p style="color:var(--ts);font-size:12px;margin-bottom:10px">选择要切换的账号（当前：'+esc(admin.name)+'）</p>';
+  for(var i=0;i<users.length;i++){
+   var u=users[i],isCur=(u.id===admin.id);
+   html+='<div style="padding:10px 12px;margin-bottom:4px;border:1px solid '+(isCur?'var(--p)':'var(--b)')+';border-radius:8px;background:'+(isCur?'var(--pl)':'#fff')+';cursor:'+(isCur?'default':'pointer')+'" onclick="'+(isCur?'':'switchToAccount(\''+u.id+'\')')+'"><div style="font-weight:600;font-size:13px">'+esc(u.name)+(isCur?' <span class="badge bg-b">当前</span>':'')+'</div><div style="font-size:11px;color:var(--ts)">'+esc(u.username)+' · '+(u.role==='super_admin'?'管理员':'售后人员')+'</div></div>';
+  }
+  document.getElementById('modal').innerHTML=html;
+  document.getElementById('overlay').classList.add('show');
+ });
+}
+function switchToAccount(id){
+ api('/api/admin/accounts','GET',null,true).then(function(r){
+  if(!r.ok)return;
+  var u=null;for(var i=0;i<r.data.length;i++){if(r.data[i].id===id){u=r.data[i];break;}}
+  if(!u)return;
+  // Save current admin to localStorage for easy switching back
+  var prevAccounts=[];try{prevAccounts=JSON.parse(localStorage.getItem('zk_prev_accounts')||'[]');}catch(e){}
+  if(!prevAccounts.find(function(a){return a.id===admin.id;}))prevAccounts.push({id:admin.id,name:admin.name,username:admin.username,role:admin.role,token:admin.token});
+  localStorage.setItem('zk_prev_accounts',JSON.stringify(prevAccounts.slice(-5)));
+  // Switch: login as the target user (re-use existing token if available, otherwise use stored credentials)
+  // Since we're already admin, we can directly set the admin session
+  // We need the actual token though. Let's use a server endpoint or just prompt for password.
+  // For simplicity: use the admin's existing token to re-login
+  var pw=prompt('请输入 '+u.name+' 的登录密码以切换账号：');
+  if(!pw){closeModal();return;}
+  api('/api/admin/login','POST',{username:u.username,password:pw}).then(function(r2){
+   if(r2.ok){admin=r2.data;save();closeModal();toast('已切换到 '+admin.name,'s');showPage('dashboard');}
+   else toast(r2.msg||'密码错误','e');
+  });
+ });
+}
+function refreshPage(){if(admin.token){showPage('dashboard');toast('已刷新','s');}else{showLogin();toast('已刷新，请登录','i');}}
+document.addEventListener('click',function(e){var d=document.getElementById('userDrop');if(d&&d.classList.contains('show')&&!e.target.closest('.topbar'))d.classList.remove('show');});
+function api(p,m,b,a){var o={method:m||'GET',headers:{'Content-Type':'application/json'}};if(a&&admin.token)o.headers['Authorization']='Bearer '+admin.token;if(b)o.body=JSON.stringify(b);return fetch(API+p,o).then(function(r){return r.json();});}
+function toast(msg,tp){tp=tp||'i';var c=document.getElementById('toasts'),d=document.createElement('div');d.className='toast '+tp;d.textContent=msg;c.appendChild(d);setTimeout(function(){d.style.opacity='0';d.style.transition='opacity .3s';setTimeout(function(){d.remove();},300);},2200);}
+function fmt(ts){if(!ts)return'';var d=new Date(ts);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+function fmtD(ts){if(!ts)return'';var d=new Date(ts);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fmtDt(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+function esc(s){if(!s)return'';var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+function save(){try{localStorage.setItem('zk_admin',JSON.stringify(admin));}catch(e){}}function load(){try{var r=localStorage.getItem('zk_admin');if(r)admin=JSON.parse(r);}catch(e){}}
+
+function showLogin(){
+ document.getElementById('sideNav').innerHTML='';document.getElementById('topBar').innerHTML='';
+ document.getElementById('page').innerHTML='<div style="max-width:380px;margin:60px auto;text-align:center"><div style="width:72px;height:72px;margin:0 auto 12px;background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;font-weight:bold">ZK</div><h1 style="font-size:20px;margin-bottom:2px">售后管理系统登录</h1><p style="color:var(--ts);font-size:13px;margin-bottom:20px">广东中科数控科技有限公司</p><div class="card" style="text-align:left"><form onsubmit="return doLogin(event)" autocomplete="off"><div class="fg"><label>登录账号</label><input type="text" id="lgUser" placeholder="请输入账户名" required style="font-size:15px" autocomplete="username"></div><div class="fg"><label>登录密码</label><input type="password" id="lgPass" placeholder="请输入密码" required style="font-size:15px" autocomplete="current-password"></div><button class="btn btn-p btn-block" style="padding:11px;font-size:15px">登 录 系 统</button></form><p style="text-align:center;margin-top:6px;font-size:10px;color:var(--ts)">默认密码首次登录请自行修改 | 管理员: admin / admin123 | 售后: staff1 / staff123</p></div><p style="margin-top:10px;font-size:11px;color:var(--ts)">👤 客户报修？<a href="./" style="color:var(--p);font-weight:600">返回客户服务中心</a></p></div>';
+}
+function doLogin(e){e.preventDefault();var u=document.getElementById('lgUser').value.trim(),p=document.getElementById('lgPass').value.trim();if(!u||!p){toast('请输入账号和密码','e');return false;}api('/api/admin/login','POST',{username:u,password:p}).then(function(r){if(r.ok){admin=r.data;save();
+ if(admin.mustChangePwd){showChangePwd(true);return;}
+ toast('欢迎回来，'+admin.name,'s');showPage('dashboard');}else toast(r.msg||'登录失败','e');});return false;}
+function showChangePwd(firstLogin){
+ firstLogin=firstLogin||false;
+ document.getElementById('page').innerHTML='<div class="card" style="max-width:420px;margin:60px auto"><h3 style="margin-bottom:12px">'+(firstLogin?'🔒 首次登录请修改密码':'🔒 修改密码')+'</h3>'+(firstLogin?'<p style="color:var(--ts);font-size:12px;margin-bottom:12px">系统检测到您是首次登录，为了安全请先修改默认密码。</p>':'')+'<form onsubmit="return doChangePwd(event)"><div class="fg"><label>旧密码</label><input type="password" id="cpOld" placeholder="请输入旧密码" required></div><div class="fg"><label>新密码</label><input type="password" id="cpNew" placeholder="至少6位" required minlength="6"></div><div class="fg"><label>确认新密码</label><input type="password" id="cpNew2" placeholder="再次输入新密码" required></div><div style="color:var(--d);font-size:11px;margin-bottom:8px;display:none" id="cpErr"></div><button class="btn btn-p btn-block">确认修改</button></form></div>';
+}
+function doChangePwd(e){e.preventDefault();var oldP=document.getElementById('cpOld').value.trim(),newP=document.getElementById('cpNew').value.trim(),newP2=document.getElementById('cpNew2').value.trim();if(!oldP||!newP){toast('请填写所有字段','e');return false;}if(newP.length<6){toast('新密码至少6位','e');return false;}if(newP!==newP2){toast('两次密码不一致','e');return false;}api('/api/admin/change-pwd','PUT',{oldPassword:oldP,newPassword:newP},true).then(function(r){if(r.ok){toast('密码修改成功！','s');admin.mustChangePwd=false;save();showPage('dashboard');}else toast(r.msg||'修改失败','e');});return false;}
+function logout(){admin={};save();showLogin();}
+
+var _page='dashboard';
+function renderNav(){
+ var items=[{id:'dashboard',icon:'📊',label:'工作台'},{id:'tasks',icon:'📋',label:'报修任务'},{id:'parts',icon:'🛒',label:'配件管理'},{id:'orders',icon:'📦',label:'出库订单'}];
+ if(admin.role==='super_admin'){items.push({id:'customers',icon:'🏭',label:'客户管理'},{id:'accounts',icon:'👥',label:'账号管理'});items.push({id:'audit',icon:'📝',label:'操作日志'});items.push({id:'monthly',icon:'📊',label:'费用月报'});items.push({id:'settings',icon:'⚙️',label:'系统设置'});}
+ var html='';for(var i=0;i<items.length;i++)html+='<button class="s-item '+(_page===items[i].id?'active':'')+'" onclick="showPage(\''+items[i].id+'\')"><span>'+items[i].icon+'</span><span>'+items[i].label+'</span></button>';
+ document.getElementById('sideNav').innerHTML=html;
+ document.getElementById('topBar').innerHTML='<button class="u-btn" onclick="toggleUserMenu()"><span class="avatar">'+esc(admin.name).charAt(0)+'</span><span>'+esc(admin.name)+'</span></button><button class="u-btn refresh" onclick="refreshPage()" id="refreshBtn" title="刷新同步">🔄</button><div class="u-drop" id="userDrop"></div>';
+}
+function showPage(p){_page=p;if(!admin.token){showLogin();return;}renderNav();
+ if(p==='dashboard')dashPage();else if(p==='tasks')tasksPage();else if(p==='parts')partsPage();else if(p==='orders')ordersPage();else if(p==='customers')customersPage();else if(p==='accounts')accountsPage();else if(p==='audit')auditPage();else if(p==='monthly')monthlyPage();else if(p==='settings')settingsPage();
+}
+
+// ====== 工作台 ======
+function dashPage(){
+ Promise.all([api('/api/stats','GET',null,true),api('/api/tasks','GET',null,true),api('/api/orders','GET',null,true)]).then(function(r){
+  var stats=r[0].ok?r[0].data:{},tasks=r[1].ok?r[1].data:[],orders=r[2].ok?r[2].data:[];
+  var oU=orders.filter(function(o){return o.status==='pending_payment';}).length;
+  var today=new Date(),tdStart=new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime();
+  var todayTasks=tasks.filter(function(t){return t.createdAt>=tdStart;}).length;
+  var todayOrders=orders.filter(function(o){return o.createdAt>=tdStart;}).length;
+
+  var staffHtml='';if(stats.staffStats){var names=Object.keys(stats.staffStats);for(var i=0;i<names.length;i++){var ss=stats.staffStats[names[i]];staffHtml+='<tr style="cursor:pointer" onclick="showStaffPerf(\''+(ss.id||'')+'\',\''+esc(names[i])+'\',\''+(ss.phone||'')+'\')"><td><strong>'+esc(names[i])+'</strong></td><td>'+ss.processed+'</td><td>'+ss.completed+'</td><td style="font-size:10px;color:var(--p)">查看详情 →</td></tr>';}}
+  document.getElementById('page').innerHTML=
+   '<div class="stats">'+
+   '<div class="stat" onclick="showPage(\'tasks\')"><div class="s-icon r">🔔</div><div><div class="s-num">'+stats.pending+'</div><div class="s-label">待处理任务</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'tasks\')"><div class="s-icon o">⏳</div><div><div class="s-num">'+stats.processing+'</div><div class="s-label">处理中任务</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'tasks\')"><div class="s-icon g">✅</div><div><div class="s-num">'+stats.completed+'</div><div class="s-label">已完成任务</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'orders\')"><div class="s-icon r">💳</div><div><div class="s-num">'+oU+'</div><div class="s-label">待付款订单</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'tasks\')"><div class="s-icon b">📋</div><div><div class="s-num">'+todayTasks+'</div><div class="s-label">今日报修</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'orders\')"><div class="s-icon g">📦</div><div><div class="s-num">'+todayOrders+'</div><div class="s-label">今日订单</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'tasks\')"><div class="s-icon b">🛡️</div><div><div class="s-num">'+(stats.inWarranty||0)+'</div><div class="s-label">在保设备</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'tasks\')"><div class="s-icon r">⚠️</div><div><div class="s-num">'+(stats.outWarranty||0)+'</div><div class="s-label">过保设备</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'tasks\')"><div class="s-icon p">💰</div><div><div class="s-num">'+(stats.pendingQuotation||0)+'</div><div class="s-label">待审批报价</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'parts\')"><div class="s-icon b">📦</div><div><div class="s-num">'+(stats.totalParts||0)+'</div><div class="s-label">配件种类</div></div></div>'+
+   '<div class="stat" onclick="showPage(\'audit\')"><div class="s-icon p">👥</div><div><div class="s-num">'+(stats.customerCount||0)+'</div><div class="s-label">客户数量</div></div></div>'+
+   '</div>'+
+   '<div class="card"><div class="card-head"><h3>👥 售后人员绩效 <small style="color:var(--ts);font-weight:400;font-size:11px">（点击查看详情）</small></h3></div>'+(staffHtml?'<table><thead><tr><th>姓名</th><th>处理</th><th>完成</th><th></th></tr></thead><tbody>'+staffHtml+'</tbody></table>':'<div class="emp">暂无绩效数据</div>')+'</div>';
+ });
+}
+
+function showStaffPerf(sid,sname,sphone){
+ document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>👤 '+esc(sname)+' 绩效详情</h3><p style="color:var(--ts);font-size:12px">📞 '+esc(sphone||'未设置')+'</p><div class="date-picker" style="margin:12px 0"><label style="font-size:12px">日期范围：</label><input type="text" id="spStart" placeholder="开始日期" readonly style="width:130px;cursor:pointer" onclick="openDatePicker(\'spStart\',\'date\')"><span>至</span><input type="text" id="spEnd" placeholder="结束日期" readonly style="width:130px;cursor:pointer" onclick="openDatePicker(\'spEnd\',\'date\')"><button class="btn btn-p btn-xs" onclick="loadStaffPerf(\''+sid+'\',\''+esc(sname)+'\')">查询</button></div><div id="spData"><div class="emp">加载中...</div></div><button class="btn btn-o btn-block" style="margin-top:10px" onclick="closeModal()">关闭</button>';
+ document.getElementById('overlay').classList.add('show');
+ loadStaffPerf(sid,sname);
+}
+function loadStaffPerf(sid,sname){
+ var st=document.getElementById('spStart')?document.getElementById('spStart').value:'',et=document.getElementById('spEnd')?document.getElementById('spEnd').value:'';
+ var url='/api/admin/staff-performance?staffId='+encodeURIComponent(sid);
+ if(st)url+='&startDate='+st;if(et)url+='&endDate='+et;
+ api(url,'GET',null,true).then(function(r){
+  if(!r.ok){document.getElementById('spData').innerHTML='<div class="emp">暂无数据</div>';return;}
+  var d=r.data,h='<div style="font-size:12px;color:var(--ts);margin-bottom:8px">总计 '+d.totalActions+' 条操作记录</div>';
+  if(d.dailyStats&&d.dailyStats.length){
+   h+='<table><thead><tr><th>日期</th><th>操作次数</th><th>完成数</th></tr></thead><tbody>';
+   for(var i=0;i<d.dailyStats.length;i++)h+='<tr><td>'+d.dailyStats[i].date+'</td><td><strong>'+d.dailyStats[i].count+'</strong></td><td>'+d.dailyStats[i].completed+'</td></tr>';
+   h+='</tbody></table>';
+  }
+  if(d.details&&d.details.length){
+   h+='<div style="font-weight:600;margin-top:10px;margin-bottom:6px;font-size:12px">最近操作记录</div>';
+   for(var j=0;j<Math.min(d.details.length,30);j++)h+='<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--b)"><span style="color:var(--ts)">'+fmtD(d.details[j].time)+'</span> '+esc(d.details[j].action)+'</div>';
+  }
+  document.getElementById('spData').innerHTML=h||'<div class="emp">暂无数据</div>';
+ });
+}
+
+// ====== 报修任务 ======
+function tasksPage(){
+ api('/api/tasks','GET',null,true).then(function(r){
+  if(!r.ok)return;var tasks=r.data||[];tasks.sort(function(a,b){return b.createdAt-a.createdAt;});
+  var rows='';var sm={pending:'bg-y',processing:'bg-b',completed:'bg-g',cancelled:'bg-r'},st={pending:'待处理',processing:'处理中',completed:'已完成',cancelled:'已取消'};
+  for(var i=0;i<tasks.length;i++){var t=tasks[i];
+   var wsB='',wsL='';if(t.warrantyStatus==='in_warranty'){wsB='bg-g';wsL='在保('+(t.warrantyMonths||12)+'月)';}else if(t.warrantyStatus==='out_warranty'){wsB='bg-r';wsL='过保';}else{wsB='bg-y';wsL='未知';}
+   var qB='';if(t.quotationStatus==='pending_approval')qB='<span class="badge bg-p" style="margin-left:3px">待审批 ¥'+(t.quotation||0)+'</span>';else if(t.quotationStatus==='approved')qB='<span class="badge bg-g" style="margin-left:3px">已报价 ¥'+(t.quotation||0)+'</span>';
+   var aI='';if(t.assigneeName)aI=' · 👤 '+esc(t.assigneeName)+(t.acceptTime?' '+fmtD(t.acceptTime):'');
+   rows+='<div class="t-item" onclick="taskDetail(\''+t.id+'\')"><div class="ti"><div class="tn">🔧 '+esc(t.machineType)+' <small style="color:var(--tl)">#'+t.id+'</small><span class="badge '+wsB+'" style="margin-left:4px">'+wsL+'</span>'+qB+(t.machinePart?'<span class="badge bg-c" style="margin-left:3px">'+esc(t.machinePart).slice(0,6)+'</span>':'')+'</div><div class="ts">'+esc(t.customerName||t.customerPhone)+' · '+fmt(t.createdAt)+(t.factoryName?' · '+esc(t.factoryName):'')+aI+'</div></div><div style="display:flex;align-items:center;gap:6px"><span class="badge '+(sm[t.status]||'bg-y')+'">'+(st[t.status]||'待处理')+'</span></div></div>';
+  }
+  document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>📋 报修任务列表 · '+tasks.length+' 条</h3></div>'+(rows||'<div class="emp">暂无报修任务</div>')+'</div>';
+ });
+}
+
+function taskDetail(id){
+ api('/api/tasks','GET',null,true).then(function(r){if(!r.ok)return;var t=null;for(var i=0;i<r.data.length;i++){if(r.data[i].id===id){t=r.data[i];break;}}if(!t)return;
+  var sm={pending:'bg-y',processing:'bg-b',completed:'bg-g',cancelled:'bg-r'},st={pending:'待处理',processing:'处理中',completed:'已完成',cancelled:'已取消'};
+  var wsL='',wsC='';if(t.warrantyStatus==='in_warranty'){wsL='在保（保修期'+(t.warrantyMonths||12)+'个月）';wsC='bg-g';}else if(t.warrantyStatus==='out_warranty'){wsL='过保（已超过保修期）';wsC='bg-r';}else{wsL='未知';wsC='bg-y';}
+  var addr='';if(t.province)addr+=t.province;if(t.city)addr+=' '+t.city;if(t.district)addr+=' '+t.district;if(t.detailAddress)addr+=' '+t.detailAddress;if(!addr&&t.address)addr=t.address;
+
+  var info='';
+  info+='<div class="ic"><div class="il">工单编号</div><div class="iv">'+t.id+'</div></div>';
+  info+='<div class="ic"><div class="il">保修状态</div><div class="iv"><span class="badge '+wsC+'">'+wsL+'</span></div></div>';
+  info+='<div class="ic"><div class="il">客户</div><div class="iv">'+esc(t.customerName||t.customerPhone)+'</div></div>';
+  info+='<div class="ic"><div class="il">电话</div><div class="iv">'+esc(t.customerPhone||'-')+'</div></div>';
+  if(t.factoryName)info+='<div class="ic"><div class="il">工厂</div><div class="iv">'+esc(t.factoryName)+'</div></div>';
+  info+='<div class="ic"><div class="il">地址</div><div class="iv">'+esc(addr||'未填写')+'</div></div>';
+  info+='<div class="ic"><div class="il">设备类型</div><div class="iv">'+esc(t.machineType)+'</div></div>';
+  if(t.machinePart)info+='<div class="ic"><div class="il">故障部位</div><div class="iv"><span class="badge bg-c">'+esc(t.machinePart)+'</span></div></div>';
+  info+='<div class="ic"><div class="il">设备编号</div><div class="iv">'+(t.machineSn||'未填写')+'</div></div>';
+  info+='<div class="ic"><div class="il">出厂日期</div><div class="iv">'+(t.manufactureDate?fmtD(t.manufactureDate):'-')+'</div></div>';
+  info+='<div class="ic"><div class="il">创建时间</div><div class="iv">'+fmt(t.createdAt)+'</div></div>';
+  info+='<div class="ic"><div class="il">当前状态</div><div class="iv"><span class="badge '+(sm[t.status]||'bg-y')+'">'+(st[t.status]||'待处理')+'</span></div></div>';
+  if(t.assigneeName){info+='<div class="ic"><div class="il">售后人员</div><div class="iv">👤 '+esc(t.assigneeName)+' ('+esc(t.assigneePhone||'')+')</div></div>';info+='<div class="ic"><div class="il">接单时间</div><div class="iv">'+(t.acceptTime?fmt(t.acceptTime):'-')+'</div></div>';}
+  if(t.repairStartTime)info+='<div class="ic"><div class="il">维修开始</div><div class="iv">'+fmt(t.repairStartTime)+'</div></div>';
+  if(t.repairEndTime)info+='<div class="ic"><div class="il">维修结束</div><div class="iv">'+fmt(t.repairEndTime)+'</div></div>';
+  if(t.quotation!==null&&t.quotation!==undefined)info+='<div class="ic"><div class="il">维修报价</div><div class="iv" style="color:var(--d)">¥'+(t.quotation||0)+' <span class="badge '+(t.quotationStatus==='approved'?'bg-g':(t.quotationStatus==='rejected'?'bg-r':'bg-p'))+'">'+(t.quotationStatus==='approved'?'已审批':(t.quotationStatus==='rejected'?'已拒绝':'待审批'))+'</span></div></div>';
+  if(t.repairCost)info+='<div class="ic"><div class="il">实际维修费</div><div class="iv" style="color:var(--d)">¥'+t.repairCost+'</div></div>';
+  info+='<div class="ic full"><div class="il">故障描述</div><div class="iv desc">'+esc(t.faultDescription)+'</div></div>';
+  if(t.resolution)info+='<div class="ic full"><div class="il">处理结果</div><div class="iv desc" style="background:#f0fdf4">'+esc(t.resolution)+'</div></div>';
+  if(t.photos&&t.photos.length){info+='<div class="ic full"><div class="il">现场照片</div><div class="iv">';for(var p=0;p<t.photos.length;p++)info+='<img src="'+t.photos[p]+'" style="width:60px;height:60px;object-fit:cover;margin:2px;border-radius:4px;cursor:pointer" onclick="window.open(\''+t.photos[p]+'\')">';info+='</div></div>';}
+
+  var tl='';if(t.statusHistory&&t.statusHistory.length){tl='<div class="tl"><div class="tl-title">流转记录</div><div class="tl-body">';for(var h=0;h<t.statusHistory.length;h++)tl+='<div class="tl-i'+(t.statusHistory[h].status==='completed'?' complete':'')+'"><div class="tl-time">'+fmt(t.statusHistory[h].time)+' · '+esc(t.statusHistory[h].operator||'')+'</div><div class="tl-note">'+esc(t.statusHistory[h].note)+'</div></div>';tl+='</div></div>';}
+
+  var act='';
+  if(t.status!=='completed'&&t.status!=='cancelled'){
+   act='<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--b)"><div style="font-weight:600;margin-bottom:7px;font-size:12px">🔧 操作区</div><div class="btn-group">';
+   if(t.status==='pending'){if(admin.role==='super_admin'){act+='<button class="btn btn-p btn-sm" onclick="dispatchStaff(\''+t.id+'\')">👤 指派售后人员</button>';}else{act+='<button class="btn btn-p btn-sm" onclick="acceptTask(\''+t.id+'\')">📥 接单处理</button>';}}
+   if(t.status==='processing'){act+='<button class="btn btn-w btn-sm" onclick="showQuotation(\''+t.id+'\')">💰 维修报价</button>';act+='<button class="btn btn-o btn-sm" onclick="showRepairTime(\''+t.id+'\')">🕐 维修时间</button>';act+='<button class="btn btn-s btn-sm" onclick="completeTask(\''+t.id+'\')">✅ 完成</button>';}
+  act+='<button class="btn btn-o btn-sm" onclick="closeModal();manualOrder(\''+t.id+'\',\''+esc(t.customerPhone||'')+'\',\''+esc(t.customerName||t.factoryName||'')+'\')">📦 配件出库</button>';
+   if(t.quotationStatus==='pending_approval'&&admin.role==='super_admin'){act+='<button class="btn btn-s btn-sm" onclick="approveQuotation(\''+t.id+'\')">✅ 审批</button>';act+='<button class="btn btn-d btn-sm" onclick="rejectQuotation(\''+t.id+'\')">❌ 拒绝</button>';}
+   act+='<button class="btn btn-d btn-sm" onclick="if(confirm(\'确定取消工单？\'))cancelTask(\''+t.id+'\')">❌ 取消</button>';
+   if(t.quotationStatus==='approved')act+='<button class="btn btn-o btn-sm" onclick="printWarrantyForm(\''+t.id+'\')">🖨️ 打印保修单</button>';
+   act+='</div><div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px"><div style="font-weight:600;font-size:12px;margin-bottom:6px">📦 配件使用 <small style="color:var(--ts);font-weight:400">完成工单时自动出库</small></div><div id="taskParts_'+t.id+'">'+(t.repairItems&&t.repairItems.length?t.repairItems.map(function(p,i){return'<div style="font-size:12px;padding:4px 6px;margin:2px 0;display:flex;gap:8px;align-items:center;background:#fff;border-radius:4px"><span style="font-weight:500;flex:1">'+esc(p.partName)+'</span><span style="color:var(--ts)">×</span><span style="font-weight:700;min-width:24px;text-align:center">'+p.qty+'</span><span style="color:var(--d);font-weight:600;min-width:50px;text-align:right">¥'+(p.unitPrice||0)+'</span><button class="btn btn-d btn-xs" onclick="removeTaskPart(\''+t.id+'\','+i+')">×</button></div>';}).join(''):'<div style="font-size:11px;color:var(--ts)">暂无配件使用记录</div>')+'</div><div style="display:flex;gap:6px;margin-top:6px;align-items:center"><select id="tpSelect_'+t.id+'" style="flex:2;padding:7px 8px;border:1px solid var(--b);border-radius:6px;font-size:12px" onchange="tpFillPrice(\''+t.id+'\')"><option value="">选择库存配件</option></select><input type="number" id="tpPrice_'+t.id+'" placeholder="单价" style="width:70px;padding:7px 8px;border:1px solid var(--b);border-radius:6px;font-size:12px"><span style="font-size:11px;color:var(--ts)">×</span><input type="number" id="tpQty_'+t.id+'" value="1" min="1" style="width:65px;padding:7px;border:1px solid var(--b);border-radius:6px;font-size:14px;font-weight:600;text-align:center"><button class="btn btn-s btn-sm" onclick="addTaskPart(\''+t.id+'\')" style="padding:7px 14px">＋ 添加</button></div></div><div class="fg" style="margin-top:8px"><label>处理备注</label><textarea id="resInp" style="min-height:45px">'+esc(t.resolution||'')+'</textarea><button class="btn btn-o btn-sm" style="margin-top:3px" onclick="saveRes(\''+t.id+'\')">💾 保存</button></div></div>';
+  }else{
+   // 已完成：添加维修费 + 打印
+   act='<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--b)"><div class="btn-group">';
+   act+='<button class="btn btn-w btn-sm" onclick="showRepairCost(\''+t.id+'\')">💰 添加维修费</button>';
+   act+='<button class="btn btn-o btn-sm" onclick="printWarrantyForm(\''+t.id+'\')">🖨️ 打印保修单</button>';
+   act+='</div></div>';
+  }
+
+  document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3 style="font-size:15px;margin-bottom:10px">📋 维修工单 '+t.id+'</h3><div class="ig">'+info+'</div>'+tl+act+'<button class="btn btn-o btn-block" style="margin-top:8px" onclick="closeModal()">关闭</button>';
+  document.getElementById('overlay').classList.add('show');
+ });
+}
+
+function showRepairCost(id){
+ document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>💰 添加维修费用</h3><form onsubmit="return saveRepairCost(event,\''+id+'\')"><div class="fg"><label>维修费用（元）*</label><input type="number" id="rcAmt" step="0.01" min="0" required></div><div class="fg"><label>费用说明</label><input type="text" id="rcNote" placeholder="人工费、配件费等..."></div><button class="btn btn-w btn-block">保存费用</button></form>';
+ document.getElementById('overlay').classList.add('show');
+}
+function saveRepairCost(e,id){e.preventDefault();var amt=parseFloat(document.getElementById('rcAmt').value)||0,note=document.getElementById('rcNote').value.trim();api('/api/tasks/'+id,'PUT',{repairCost:amt,note:'添加维修费用：¥'+amt+(note?'（'+note+'）':'')},true).then(function(r){if(r.ok){toast('维修费用已保存','s');closeModal();}else toast(r.msg,'e');});return false;}
+
+function acceptTask(id){api('/api/tasks/'+id,'PUT',{status:'processing',assignedTo:admin.id,assigneeName:admin.name,assigneePhone:admin.phone||'',acceptTime:Date.now(),note:admin.name+'已接单，开始处理',repairStartTime:Date.now()},true).then(function(r){if(r.ok){toast(admin.name+'已接单','s');closeModal();}else toast(r.msg,'e');});}
+function dispatchStaff(id){
+ api('/api/admin/staff','GET',null,true).then(function(r){
+  var staff=r.ok?r.data:[],opts='';for(var i=0;i<staff.length;i++)opts+='<option value="'+staff[i].id+'" data-name="'+esc(staff[i].name)+'" data-phone="'+esc(staff[i].phone||'')+'">'+esc(staff[i].name)+' ('+esc(staff[i].phone||'')+')</option>';
+  document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>👤 指派售后人员</h3><form onsubmit="return doDispatch(event,\''+id+'\')"><div class="fg"><label>选择人员</label><select id="dpStaff">'+opts+'</select></div><button class="btn btn-p btn-block">确认指派</button></form>';
+  document.getElementById('overlay').classList.add('show');
+ });
+}
+function doDispatch(e,tid){e.preventDefault();var sel=document.getElementById('dpStaff'),sid=sel.value,sname=sel.options[sel.selectedIndex].getAttribute('data-name'),sphone=sel.options[sel.selectedIndex].getAttribute('data-phone');api('/api/tasks/'+tid,'PUT',{status:'processing',assignedTo:sid,assigneeName:sname,assigneePhone:sphone,acceptTime:Date.now()},true).then(function(r){if(r.ok){toast('已指派 '+sname,'s');closeModal();}});return false;}
+
+function showQuotation(id){
+ api('/api/tasks','GET',null,true).then(function(r){var t=null;for(var i=0;i<(r.data||[]).length;i++)if(r.data[i].id===id)t=r.data[i];
+  document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>💰 维修报价 · '+id+'</h3><form onsubmit="return saveQuotation(event,\''+id+'\')"><div class="fg"><label>报价金额（元）*</label><input type="number" id="quAmt" step="0.01" min="0" value="'+(t&&t.quotation?t.quotation:0)+'" required></div><div class="fg"><label>报价说明</label><textarea id="quNote" rows="2" placeholder="费用明细..."></textarea></div><p style="font-size:11px;color:var(--ts);margin-bottom:10px">提交后需管理员审批才能打印保修单</p><button class="btn btn-w btn-block">提交报价</button></form>';
+  document.getElementById('overlay').classList.add('show');
+});
+}
+function saveQuotation(e,id){e.preventDefault();var amt=parseFloat(document.getElementById('quAmt').value)||0,note=document.getElementById('quNote').value.trim();api('/api/tasks/'+id,'PUT',{quotation:amt,quotationStatus:'pending_approval',repairCost:amt},true).then(function(r){if(r.ok){toast('报价已提交，等待管理员审批','s');closeModal();}});return false;}
+function approveQuotation(id){if(!confirm('确认审批通过？'))return;api('/api/tasks/'+id,'PUT',{quotationStatus:'approved'},true).then(function(r){if(r.ok){toast('审批通过','s');closeModal();}});}
+function rejectQuotation(id){if(!confirm('确认拒绝？'))return;api('/api/tasks/'+id,'PUT',{quotationStatus:'rejected'},true).then(function(r){if(r.ok){toast('已拒绝','s');closeModal();}});}
+
+function showRepairTime(id){api('/api/tasks','GET',null,true).then(function(r){var t=null;for(var i=0;i<(r.data||[]).length;i++)if(r.data[i].id===id)t=r.data[i];var rs=(t&&t.repairStartTime?new Date(t.repairStartTime).toISOString().slice(0,16):''),re=(t&&t.repairEndTime?new Date(t.repairEndTime).toISOString().slice(0,16):'');document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>🕐 维修时间 · '+id+'</h3><form onsubmit="return saveRepairTime(event,\''+id+'\')"><div class="fr"><div class="fg"><label>开始时间</label><input type="text" id="rtStart" value="'+rs+'" placeholder="点击选择开始时间" readonly class="date-trigger" onclick="openDatePicker(\'rtStart\',\'datetime\')"></div><div class="fg"><label>结束时间</label><input type="text" id="rtEnd" value="'+re+'" placeholder="点击选择结束时间" readonly class="date-trigger" onclick="openDatePicker(\'rtEnd\',\'datetime\')"></div></div><button class="btn btn-p btn-block">保存</button></form>';document.getElementById('overlay').classList.add('show');});}
+function saveRepairTime(e,id){e.preventDefault();var st=document.getElementById('rtStart').value,et=document.getElementById('rtEnd').value,d={};if(st)d.repairStartTime=new Date(st).getTime();if(et)d.repairEndTime=new Date(et).getTime();api('/api/tasks/'+id,'PUT',d,true).then(function(r){if(r.ok){toast('已保存','s');closeModal();}});return false;}
+
+function completeTask(id){
+ var res=document.getElementById('resInp');var note=(res?res.value.trim():'')||'维修已完成';
+ // 获取配件使用清单
+ var repairItems=[];var pid='taskParts_'+id;
+ var partsDiv=document.getElementById(pid);
+ if(partsDiv){
+  var rows=partsDiv.querySelectorAll('div[style]');
+  for(var r=0;r<rows.length;r++){
+   var txt=rows[r].textContent||'';
+   var m=txt.match(/(.+?)\s*×(\d+)\s*¥(\d+\.?\d*)/);
+   if(m)repairItems.push({partName:m[1].trim(),qty:parseInt(m[2]),unitPrice:parseFloat(m[3]),subtotal:parseInt(m[2])*parseFloat(m[3])});
+  }
+ }
+ var totalPartsCost=0;repairItems.forEach(function(p){totalPartsCost+=p.subtotal||0;});
+ api('/api/tasks/'+id,'PUT',{status:'completed',note:note,repairEndTime:Date.now(),repairItems:repairItems,repairCost:totalPartsCost},true).then(function(r){
+  if(r.ok){
+   // 自动减少配件库存
+   if(repairItems.length>0){
+    var done=0;
+    repairItems.forEach(function(p){
+     api('/api/parts','GET',null,true).then(function(pr){
+      if(!pr.ok)return;
+      var part=pr.data.find(function(x){return x.name===p.partName;});
+      if(part&&part.stock>=p.qty){
+       api('/api/parts/'+part.id+'/stock','POST',{type:'out',qty:p.qty},true).then(function(){done++;});
+      }
+     });
+    });
+   }
+   toast('工单已完成，配件已出库','s');closeModal();
+  }else toast(r.msg,'e');
+ });
+}
+// 任务配件操作
+function loadTaskParts(taskId){
+ api('/api/parts','GET',null,true).then(function(r){
+  var sel=document.getElementById('tpSelect_'+taskId);if(!sel)return;
+  sel.innerHTML='<option value="">选择库存配件</option>';
+  if(r.ok&&r.data){r.data.forEach(function(p){sel.innerHTML+='<option value="'+p.id+'" data-name="'+esc(p.name)+'" data-price="'+p.price+'">'+esc(p.name)+' · ¥'+p.price+'('+p.stock+')</option>';});}
+ });
+}
+function tpFillPrice(taskId){
+ var sel=document.getElementById('tpSelect_'+taskId);if(!sel)return;
+ var opt=sel.options[sel.selectedIndex];
+ var priceEl=document.getElementById('tpPrice_'+taskId);
+ if(opt&&opt.dataset.price)priceEl.value=opt.dataset.price;
+}
+function addTaskPart(taskId){
+ var sel=document.getElementById('tpSelect_'+taskId),price=document.getElementById('tpPrice_'+taskId),qty=document.getElementById('tpQty_'+taskId);
+ if(!sel||!price||!qty)return;
+ var opt=sel.options[sel.selectedIndex];var name=opt&&opt.dataset.name?opt.dataset.name:sel.value;
+ var pr=parseFloat(price.value)||0,qt=parseInt(qty.value)||1;
+ if(!name||pr<=0){toast('请选择配件并填写价格','e');return;}
+ // 保存到当前task的repairItems
+ var taskEl=document.getElementById('taskParts_'+taskId);if(!taskEl)return;
+ var existing=taskEl.querySelectorAll('div[style]');
+ var html='';var found=false;
+ for(var i=0;i<existing.length;i++){
+  var txt=existing[i].textContent||'';var m=txt.match(/(.+?)\s*×(\d+)\s*¥(\d+\.?\d*)/);
+  if(m&&m[1].trim()===name){
+   var newQt=parseInt(m[2])+qt;
+   html+='<div style="font-size:12px;padding:4px 6px;margin:2px 0;display:flex;gap:8px;align-items:center;background:#fff;border-radius:4px"><span style="font-weight:500;flex:1">'+esc(name)+'</span><span style="color:var(--ts)">×</span><span style="font-weight:700;min-width:24px;text-align:center">'+newQt+'</span><span style="color:var(--d);font-weight:600;min-width:50px;text-align:right">¥'+pr.toFixed(2)+'</span><button class="btn btn-d btn-xs" onclick="removeTaskPart(\''+taskId+'\','+i+')">×</button></div>';
+   found=true;
+  }else{html+=existing[i].outerHTML;}
+ }
+ if(!found){html+='<div style="font-size:12px;padding:4px 6px;margin:2px 0;display:flex;gap:8px;align-items:center;background:#fff;border-radius:4px"><span style="font-weight:500;flex:1">'+esc(name)+'</span><span style="color:var(--ts)">×</span><span style="font-weight:700;min-width:24px;text-align:center">'+qt+'</span><span style="color:var(--d);font-weight:600;min-width:50px;text-align:right">¥'+pr.toFixed(2)+'</span><button class="btn btn-d btn-xs" onclick="removeTaskPart(\''+taskId+'\','+existing.length+')">×</button></div>';}
+ taskEl.innerHTML=html;price.value='';qty.value='1';
+}
+function removeTaskPart(taskId,idx){
+ var taskEl=document.getElementById('taskParts_'+taskId);if(!taskEl)return;
+ var divs=taskEl.querySelectorAll('div[style]');if(divs[idx])divs[idx].remove();
+ if(taskEl.querySelectorAll('div[style]').length===0)taskEl.innerHTML='<div style="font-size:11px;color:var(--ts)">暂无配件使用记录</div>';
+}
+function cancelTask(id){api('/api/tasks/'+id,'PUT',{status:'cancelled',note:'工单已取消'},true).then(function(r){if(r.ok){toast('已取消','s');closeModal();}});}
+function saveRes(id){var r=document.getElementById('resInp').value.trim();if(!r)return;api('/api/tasks/'+id,'PUT',{resolution:r},true).then(function(x){if(x.ok){toast('已保存','s');closeModal();}});}
+function closeModal(){document.getElementById('overlay').classList.remove('show');showPage(_page);}
+
+// ====== 打印售后保修单（专业模板） ======
+function printWarrantyForm(id){
+ api('/api/tasks/'+id+'/print','GET',null,true).then(function(r){
+  if(!r.ok)return;var t=r.data,set=r.settings||{},now=new Date();
+  var addr='';if(t.province)addr+=t.province;if(t.city)addr+=' '+t.city;if(t.district)addr+=' '+t.district;if(t.detailAddress)addr+=' '+t.detailAddress;if(!addr&&t.address)addr=t.address;
+  var ws=t.warrantyStatus==='in_warranty'?'在保（'+(t.warrantyMonths||12)+'个月）':'已过保';
+  var finishTime=t.repairEndTime||t.acceptTime||t.createdAt;
+var html='<div style="max-width:720px;margin:0 auto;padding:35px 30px;font-family:\'SimSun\',\'宋体\',serif;font-size:12px;line-height:1.8">'+
+   '<div style="position:relative;text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:15px">'+
+   '<div style="position:absolute;left:0;top:0;font-size:8px;color:#999;text-align:left">打印时间：'+fmtDt(now)+'</div>'+
+   '<h2 style="margin:0;font-size:20px;letter-spacing:4px">'+esc(set.companyName||'广东中科数控科技有限公司')+'</h2>'+
+   '<h3 style="margin:6px 0 0;font-size:16px;letter-spacing:3px">设备售后报修服务单</h3>'+
+   '<p style="margin:4px 0 0;font-size:10px;color:#666">NO: '+t.id+' &nbsp;|&nbsp; 日期: '+fmtDt(new Date(finishTime))+'</p></div>'+
+   '<table style="width:100%;border-collapse:collapse;margin-bottom:12px"><tbody>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;width:16%;font-weight:bold;background:#f5f5f5">工单编号</td><td style="padding:5px 8px;border:1px solid #000;width:34%">'+t.id+'</td><td style="padding:5px 8px;border:1px solid #000;width:16%;font-weight:bold;background:#f5f5f5">保修状态</td><td style="padding:5px 8px;border:1px solid #000;width:34%">'+ws+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">客户名称</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.customerName||t.customerPhone)+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">联系电话</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.customerPhone||'-')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">工厂名称</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.factoryName||'-')+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">设备地址</td><td style="padding:5px 8px;border:1px solid #000">'+esc(addr||'-')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">设备类型</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.machineType)+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">故障部位</td><td style="padding:5px 8px;border:1px solid #000">'+(t.machinePart||'未指定')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">设备编号</td><td style="padding:5px 8px;border:1px solid #000">'+(t.machineSn||'-')+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">出厂日期</td><td style="padding:5px 8px;border:1px solid #000">'+(t.manufactureDate?fmtD(t.manufactureDate):'-')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">报修时间</td><td style="padding:5px 8px;border:1px solid #000">'+(t.createdAt?fmt(t.createdAt):'-')+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">接单时间</td><td style="padding:5px 8px;border:1px solid #000">'+(t.acceptTime?fmt(t.acceptTime):'-')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">维修开始</td><td style="padding:5px 8px;border:1px solid #000">'+(t.repairStartTime?fmt(t.repairStartTime):'-')+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">维修结束</td><td style="padding:5px 8px;border:1px solid #000">'+(t.repairEndTime?fmt(t.repairEndTime):'-')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">售后人员</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.assigneeName||'-')+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">人员电话</td><td style="padding:5px 8px;border:1px solid #000">'+esc(t.assigneePhone||'-')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">维修费用</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;font-size:14px;color:#c00">¥'+(t.repairCost||t.quotation||0)+'</td><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">审批状态</td><td style="padding:5px 8px;border:1px solid #000">'+(t.quotationStatus==='approved'?'已审批通过':(t.quotationStatus==='rejected'?'已拒绝':'待审批'))+'</td></tr>'+
+   (t.repairItems&&t.repairItems.length?'<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">更换配件</td><td colspan="3" style="padding:5px 8px;border:1px solid #000">'+t.repairItems.map(function(p){return esc(p.partName)+' ×'+p.qty+' ¥'+(p.unitPrice||0)+' = ¥'+(p.subtotal||0);}).join('<br>')+'<br><strong>配件合计：¥'+t.repairItems.reduce(function(s,p){return s+(p.subtotal||0);},0).toFixed(2)+'</strong></td></tr>':'')+
+'<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">故障描述</td><td colspan="3" style="padding:5px 8px;border:1px solid #000;min-height:40px">'+esc(t.faultDescription||'')+'</td></tr>'+
+   '<tr><td style="padding:5px 8px;border:1px solid #000;font-weight:bold;background:#f5f5f5">处理结果</td><td colspan="3" style="padding:5px 8px;border:1px solid #000;min-height:40px">'+esc(t.resolution||'')+'</td></tr>'+
+   '</tbody></table>'+
+   '<div style="display:flex;justify-content:space-between;margin-top:25px;font-size:13px">'+
+   '<div>客户确认签字：_______________</div><div>维修人员签字：_______________</div><div>审核签字：_______________</div></div>'+
+   '<div style="text-align:center;margin-top:20px;font-size:10px;color:#999;border-top:1px solid #ccc;padding-top:8px">'+esc(set.companyName||'')+' &nbsp;|&nbsp; 电话：'+esc(set.companyPhone||'')+' &nbsp;|&nbsp; 地址：'+esc(set.companyAddress||'')+'</div>'+
+   '<div class="npb" style="text-align:center;margin-top:15px"><button onclick="window.print()" style="padding:8px 25px;font-size:14px;cursor:pointer;background:#2563eb;color:#fff;border:none;border-radius:4px">🖨️ 打印此单据</button></div></div>';
+  document.getElementById('printArea').innerHTML=html;document.getElementById('printArea').style.display='block';window.print();setTimeout(function(){document.getElementById('printArea').style.display='none';},500);
+ });
+}
+
+// ====== 打印出库单 ======
+function printOrder(oid){
+ api('/api/orders/'+oid+'/print','GET',null,true).then(function(r){
+  if(!r.ok)return;var o=r.data,set=r.settings||{},now=new Date();
+  var items='',n=1;for(var j=0;j<o.items.length;j++)items+='<tr><td style="padding:4px 8px;border:1px solid #000;text-align:center">'+(n++)+'</td><td style="padding:4px 8px;border:1px solid #000">'+esc(o.items[j].partName||'')+'</td><td style="padding:4px 8px;border:1px solid #000;text-align:right">¥'+o.items[j].unitPrice.toFixed(2)+'</td><td style="padding:4px 8px;border:1px solid #000;text-align:center">'+o.items[j].qty+'</td><td style="padding:4px 8px;border:1px solid #000;text-align:right">¥'+o.items[j].subtotal.toFixed(2)+'</td></tr>';
+  var orderDate=o.shippedAt||o.paidAt||o.createdAt;
+var html='<div style="max-width:700px;margin:0 auto;padding:30px 25px;font-family:\'SimSun\',\'宋体\',serif;font-size:12px">'+
+   '<div style="position:relative;text-align:center">'+
+   '<div style="position:absolute;left:0;top:0;font-size:8px;color:#999;text-align:left">打印时间：'+fmtDt(now)+'</div>'+
+   '<h2 style="margin:0;font-size:18px;letter-spacing:4px">'+esc(set.companyName||'广东中科数控科技有限公司')+'</h2>'+
+   '<h3 style="margin:5px 0 12px;font-size:15px;letter-spacing:3px">配件出库单</h3></div>'+
+   '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px"><span><strong>出库单号：</strong>'+o.id+'</span><span><strong>日期：</strong>'+fmtDt(new Date(orderDate))+'</span><span><strong>操作人：</strong>'+esc(o.outboundBy||'-')+'</span></div>'+
+   '<div style="margin-bottom:4px;font-size:11px"><strong>客户：</strong>'+esc(o.customerName||'-')+' &nbsp; <strong>电话：</strong>'+esc(o.customerPhone||'-')+' &nbsp; <strong>工厂：</strong>'+esc(o.factoryName||'-')+'</div>'+
+   '<table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr><th style="padding:4px 8px;border:1px solid #000;text-align:center;background:#f5f5f5">序号</th><th style="padding:4px 8px;border:1px solid #000;text-align:left;background:#f5f5f5">配件名称</th><th style="padding:4px 8px;border:1px solid #000;text-align:right;background:#f5f5f5">单价</th><th style="padding:4px 8px;border:1px solid #000;text-align:center;background:#f5f5f5">数量</th><th style="padding:4px 8px;border:1px solid #000;text-align:right;background:#f5f5f5">小计</th></tr></thead><tbody>'+items+'</tbody></table>'+
+   '<div style="text-align:right;font-size:15px;font-weight:bold;margin-top:8px;padding-top:6px;border-top:2px solid #000">合计金额：¥'+o.total.toFixed(2)+'</div>'+
+   '<div style="display:flex;justify-content:space-between;margin-top:25px;font-size:12px"><div>客户签收：___________</div><div>发货人：___________</div><div>日期：___________</div></div>'+
+   '<div style="text-align:center;margin-top:18px;font-size:9px;color:#999;border-top:1px solid #ccc;padding-top:6px">'+esc(set.companyName||'')+' | '+esc(set.companyPhone||'')+' | '+esc(set.companyAddress||'')+'</div>'+
+   '<div class="npb" style="text-align:center;margin-top:12px"><button onclick="window.print()" style="padding:8px 25px;font-size:14px;cursor:pointer;background:#2563eb;color:#fff;border:none;border-radius:4px">🖨️ 打印出库单</button></div></div>';
+  document.getElementById('printArea').innerHTML=html;document.getElementById('printArea').style.display='block';window.print();setTimeout(function(){document.getElementById('printArea').style.display='none';},500);
+ });
+}
+
+// ====== PARTS ======
+function partsPage(){api('/api/parts','GET',null,true).then(function(r){var parts=r.ok?r.data:[];var cards='';for(var i=0;i<parts.length;i++){var p=parts[i];cards+='<div class="pcard">'+(p.image?'<img src="'+p.image+'" class="pi" onerror="this.style.display=\'none\'">':'<div style="width:100%;height:110px;background:#f1f5f9;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:36px;margin-bottom:7px">📦</div>')+'<div class="pn">'+esc(p.name)+'</div><div class="pp">¥'+p.price.toFixed(2)+' / '+esc(p.unit||'件')+'</div><div class="ps">库存: '+p.stock+' | '+esc(p.category||'')+'</div><div class="pa"><button class="btn btn-o btn-xs" onclick="showPartForm(\''+p.id+'\')">编辑</button><button class="btn btn-s btn-xs" onclick="stockAction(\''+p.id+'\',\'in\')">入库</button><button class="btn btn-w btn-xs" onclick="stockAction(\''+p.id+'\',\'out\')">出库</button><button class="btn btn-d btn-xs" onclick="if(confirm(\'删除？\'))api(\'/api/parts/'+p.id+'\',\'DELETE\',null,true).then(function(){showPage(\'parts\')})">删</button></div></div>';}document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>🛒 配件管理 · '+parts.length+' 种</h3><button class="btn btn-p btn-sm" onclick="showPartForm()">＋ 添加配件</button></div><div class="pgrid">'+(cards||'<div class="emp">暂无配件</div>')+'</div></div>';});}
+var _eid=null,_eimg=null;
+function showPartForm(eid){_eid=eid||null;if(eid){api('/api/parts','GET',null,true).then(function(r){var p=null;for(var i=0;i<(r.data||[]).length;i++)if(r.data[i].id===eid)p=r.data[i];fillPart(p);});}else fillPart(null);}
+function fillPart(p){_eimg=p?p.image:null;var prev='';if(_eimg)prev='<div class="img-pv"><div class="ip"><img src="'+_eimg+'"><button onclick="event.stopPropagation();_eimg=\'\';fillPart({image:\'\'})" style="position:absolute;top:0;right:0;background:var(--d);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;cursor:pointer">×</button></div></div>';document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>'+(p?'编辑配件':'添加配件')+'</h3><form onsubmit="return savePart(event)"><div class="fr"><div class="fg"><label>名称 *</label><input type="text" id="pn" value="'+(p?esc(p.name):'')+'" required></div><div class="fg"><label>分类</label><input type="text" id="pc" value="'+(p?esc(p.category||''):'')+'"></div></div><div class="fr"><div class="fg"><label>单价 *</label><input type="number" id="ppr" step="0.01" min="0" value="'+(p?p.price:0)+'" required></div><div class="fg"><label>单位 *</label><input type="text" id="pu" value="'+(p?esc(p.unit):'件')+'" required></div></div><div class="fr"><div class="fg"><label>库存 *</label><input type="number" id="ps" min="0" value="'+(p?p.stock:0)+'" required></div><div class="fg"><label>描述</label><input type="text" id="pd" value="'+(p?esc(p.desc||''):'')+'"></div></div><div class="fg"><label>配件图片</label><div class="pu" onclick="document.getElementById(\'pImgIn\').click()"><div id="pImgHint">📷 点击选择图片</div>'+prev+'</div><input type="file" id="pImgIn" accept="image/*" style="display:none" onchange="handlePartImg(event)"></div><button class="btn btn-p btn-block">'+(p?'保存修改':'添加配件')+'</button></form>';document.getElementById('overlay').classList.add('show');}
+function handlePartImg(e){var f=e.target.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(ev){_eimg=ev.target.result;fillPart({image:_eimg});};rd.readAsDataURL(f);e.target.value='';}
+function savePart(e){e.preventDefault();var n=document.getElementById('pn').value.trim(),c=document.getElementById('pc').value.trim(),pr=parseFloat(document.getElementById('ppr').value)||0,u=document.getElementById('pu').value.trim(),st=parseInt(document.getElementById('ps').value)||0,de=document.getElementById('pd').value.trim();if(!n||!u){toast('请填写必填项','e');return false;}var m=_eid?'PUT':'POST',p=_eid?'/api/parts/'+_eid:'/api/parts';api(p,m,{name:n,category:c,price:pr,unit:u,stock:st,desc:de,image:_eimg||''},true).then(function(r){if(r.ok){toast(_eid?'已更新':'已添加','s');closeModal();showPage('parts');}});return false;}
+function stockAction(pid,tp){api('/api/parts','GET',null,true).then(function(r){var p=null;for(var i=0;i<(r.data||[]).length;i++)if(r.data[i].id===pid)p=r.data[i];if(!p)return;document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>'+(tp==='in'?'📥 入库':'📤 出库')+' · '+esc(p.name)+'</h3><p style="color:var(--ts);margin-bottom:8px">当前库存：<strong>'+p.stock+' '+esc(p.unit)+'</strong></p><form onsubmit="return doStock(event,\''+pid+'\',\''+tp+'\')"><div class="fg"><label>数量 *</label><input type="number" id="sq" min="1" max="'+(tp==='out'?p.stock:99999)+'" required></div><button class="btn '+(tp==='in'?'btn-s':'btn-w')+' btn-block">确认'+(tp==='in'?'入库':'出库')+'</button></form>';document.getElementById('overlay').classList.add('show');});}
+function doStock(e,pid,tp){e.preventDefault();var q=parseInt(document.getElementById('sq').value)||0;if(q<=0){toast('数量无效','e');return false;}api('/api/parts/'+pid+'/stock','POST',{type:tp,qty:q},true).then(function(r){if(r.ok){toast('操作成功','s');closeModal();showPage('parts');}});return false;}
+
+// ====== ORDERS ======
+function ordersPage(){api('/api/orders','GET',null,true).then(function(r){var orders=r.ok?r.data:[];orders.sort(function(a,b){return b.createdAt-a.createdAt;});var rows='';for(var i=0;i<orders.length;i++){var o=orders[i],stT,stC;if(o.status==='pending_payment'){stT='待付款';stC='bg-r';}else if(o.status==='paid'){stT='已付款';stC='bg-b';}else if(o.status==='shipped'){stT='已发货';stC='bg-g';}else if(o.status==='received'){stT='已签收';stC='bg-g';}else{stT='其他';stC='bg-y';}var acts='<button class="btn btn-o btn-xs" onclick="orderDetail(\''+o.id+'\')">详情</button><button class="btn btn-p btn-xs" onclick="printOrder(\''+o.id+'\')">🖨️</button>';if(o.status==='paid')acts+='<button class="btn btn-s btn-xs" onclick="changeOrder(\''+o.id+'\',\'shipped\')">📦发货</button>';if(o.status==='pending_payment')acts+='<button class="btn btn-w btn-xs" onclick="changeOrder(\''+o.id+'\',\'paid\')">💳收款</button>';rows+='<tr><td><strong>#'+o.id+'</strong>'+(o.relatedTaskId?'<div style="font-size:9px;color:var(--ts)">关联：'+esc(o.relatedTaskId)+'</div>':'')+'</td><td>'+esc(o.customerName||o.customerPhone||'')+'</td><td style="font-weight:700;color:var(--d)">¥'+o.total.toFixed(2)+'</td><td><span class="badge '+stC+'">'+stT+'</span></td><td>'+fmt(o.createdAt)+'</td><td><div class="btn-group">'+acts+'</div></td></tr>';}document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>📦 出库订单 · '+orders.length+' 条</h3><button class="btn btn-p btn-sm" onclick="manualOrder()">＋ 手动出库</button></div>'+(orders.length===0?'<div class="emp">暂无订单</div>':'<div style="overflow-x:auto"><table><thead><tr><th>订单号</th><th>客户</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody>'+rows+'</tbody></table></div>')+'</div>';});}
+function changeOrder(oid,st){api('/api/orders/'+oid+'/status','PUT',{status:st},true).then(function(r){if(r.ok)showPage('orders');});}
+function orderDetail(oid){api('/api/orders','GET',null,true).then(function(r){var o=null;for(var i=0;i<(r.data||[]).length;i++)if(r.data[i].id===oid)o=r.data[i];if(!o)return;var items='';for(var j=0;j<o.items.length;j++)items+='<tr><td>'+esc(o.items[j].partName)+'</td><td>¥'+o.items[j].unitPrice.toFixed(2)+'</td><td>'+o.items[j].qty+'</td><td>¥'+o.items[j].subtotal.toFixed(2)+'</td></tr>';document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>订单 #'+oid+'</h3><div class="ig"><div class="ic"><div class="il">客户</div><div class="iv">'+esc(o.customerName||'')+'</div></div><div class="ic"><div class="il">手机</div><div class="iv">'+esc(o.customerPhone||'-')+'</div></div><div class="ic"><div class="il">工厂</div><div class="iv">'+esc(o.factoryName||'-')+'</div></div><div class="ic"><div class="il">时间</div><div class="iv">'+fmt(o.createdAt)+'</div></div></div><table><thead><tr><th>配件</th><th>单价</th><th>数量</th><th>小计</th></tr></thead><tbody>'+items+'</tbody></table><div style="text-align:right;font-size:15px;font-weight:700;margin-top:6px">合计：¥'+o.total.toFixed(2)+'</div><button class="btn btn-o btn-block" style="margin-top:8px" onclick="closeModal()">关闭</button>';document.getElementById('overlay').classList.add('show');});}
+function manualOrder(taskId,custPhone,custName){
+ api('/api/parts','GET',null,true).then(function(pr){
+  var parts=pr.ok?pr.data:[];
+  var partOpts='<option value="">自定义输入</option>';
+  for(var i=0;i<parts.length;i++)partOpts+='<option value="'+parts[i].id+'" data-name="'+esc(parts[i].name)+'" data-price="'+parts[i].price+'" data-stock="'+parts[i].stock+'">'+esc(parts[i].name)+' · ¥'+parts[i].price+'('+parts[i].stock+')</option>';
+  var taskLink=taskId?'<input type="hidden" id="moTask" value="'+esc(taskId)+'"><div class="fg"><label>关联工单</label><input type="text" value="'+esc(taskId)+'" readonly style="background:#f8fafc"></div>':'<div class="fg"><label>关联工单 <small style="color:var(--ts)">选填</small></label><input type="text" id="moTask" placeholder="如 RK-000001"></div>';
+  document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>📦 创建出库单</h3><form onsubmit="return createMO(event)"><div class="fr"><div class="fg"><label>客户名称 *</label><input type="text" id="moCust" value="'+esc(custName||'')+'" required></div><div class="fg"><label>手机号</label><input type="tel" id="moPhone" value="'+esc(custPhone||'')+'"></div></div>'+taskLink+'<div class="fg"><label>配件明细 <small style="color:var(--ts)">选择库存配件自动填充</small></label><div id="moItems"></div><button type="button" class="btn btn-o btn-sm" onclick="addMoRow()">＋ 添加配件行</button></div><button class="btn btn-p btn-block">创建出库单</button></form>';
+  document.getElementById('overlay').classList.add('show');
+  // 存储parts数据供后续使用
+  window._moParts=parts;
+  addMoRow();
+ });
+}
+function addMoRow(){
+ var c=document.getElementById('moItems');if(!c)return;
+ var partOpts='<option value="">自定义</option>';
+ if(window._moParts){for(var i=0;i<window._moParts.length;i++){var p=window._moParts[i];partOpts+='<option value="'+p.id+'" data-name="'+esc(p.name)+'" data-price="'+p.price+'">'+esc(p.name).slice(0,12)+'·¥'+p.price+'</option>';}}
+ var r=document.createElement('div');r.style.cssText='display:flex;gap:4px;margin-bottom:4px;align-items:center';
+ r.innerHTML='<select class="moPartSel" onchange="moPartChange(this)" style="flex:1;padding:6px 8px;border:1.5px solid var(--b);border-radius:6px;font-size:12px">'+partOpts+'</select><input type="text" placeholder="名称" class="moN" style="flex:1"><input type="number" placeholder="单价" class="moP" step="0.01" min="0" style="width:65px"><input type="number" placeholder="数量" class="moQ" min="1" value="1" style="width:45px"><button type="button" class="btn btn-d btn-xs" onclick="this.parentElement.remove()">×</button>';
+ c.appendChild(r);
+}
+function moPartChange(sel){
+ var row=sel.parentElement,opt=sel.options[sel.selectedIndex];
+ if(opt&&opt.dataset.name){
+  row.querySelector('.moN').value=opt.dataset.name;
+  row.querySelector('.moP').value=opt.dataset.price;
+ }else{row.querySelector('.moN').value='';row.querySelector('.moP').value='';}
+}
+function createMO(e){e.preventDefault();var cust=document.getElementById('moCust').value.trim(),ph=document.getElementById('moPhone').value.trim();var taskId=(document.getElementById('moTask')||{}).value||'';if(!cust){toast('请填写客户名称','e');return false;}var items=[];document.querySelectorAll('#moItems>div').forEach(function(r){var n=r.querySelector('.moN'),p=r.querySelector('.moP'),q=r.querySelector('.moQ');var nm=(n?.value||'').trim(),pr=parseFloat(p?.value)||0,qt=parseInt(q?.value)||0;if(nm&&qt>0)items.push({partName:nm,unitPrice:pr,qty:qt,subtotal:pr*qt});});if(items.length===0){toast('请添加至少一个配件','e');return false;}api('/api/orders','POST',{customerName:cust,customerPhone:ph,items:items,outboundBy:admin.name,relatedTaskId:taskId},true).then(function(r){if(r.ok){toast('出库单已创建','s');closeModal();showPage('orders');}else toast(r.msg||'创建失败','e');});return false;}
+
+
+// ====== CUSTOMERS ======
+function customersPage(){
+ api("/api/admin/customers","GET",null,true).then(function(r){
+  var customers=r.ok?r.data:[];
+  var rows="";
+  for(var i=0;i<customers.length;i++){
+    var c=customers[i];
+    var addr=[];
+    if(c.province)addr.push(c.province);
+    if(c.city)addr.push(c.city);
+    if(c.district)addr.push(c.district);
+    var addrStr=addr.join(" ")||"未设置";
+    var statusBadge=c.status==="active"?"bg-g":"bg-r";
+    var statusText=c.status==="active"?"正常":"停用";
+    var lastLogin=c.lastLogin?fmt(c.lastLogin):"从未登录";
+    var delBtn=admin.role==="super_admin"?"<button class=\"btn btn-d btn-xs\" onclick=\"deleteCustomer('"+esc(c.phone)+"')\">删除</button>":"";
+    rows+="<tr><td><strong>"+esc(c.phone)+"</strong>"+(c.hasPassword?"":" <span class=\"badge bg-r\">未设密码</span>")+"</td><td>"+esc(c.factoryName||"未设置")+"</td><td style=\"font-size:11px\">"+esc(addrStr)+"</td><td><span class=\"badge "+statusBadge+"\">"+statusText+"</span></td><td style=\"font-size:10px;color:var(--ts)\">"+lastLogin+"</td><td><div class=\"btn-group\"><button class=\"btn btn-o btn-xs\" onclick=\"editCustomer('"+esc(c.phone)+"')\">编辑</button><button class=\"btn btn-w btn-xs\" onclick=\"resetCustPwd('"+esc(c.phone)+"')\">重置密码</button>"+delBtn+"</div></td></tr>";
+  }
+  document.getElementById("page").innerHTML="<div class=\"card\"><div class=\"card-head\"><h3>🏭 客户管理 · "+customers.length+" 个</h3><button class=\"btn btn-p btn-sm\" onclick=\"showAddCustomer()\">＋ 创建客户账号</button></div>"+(customers.length===0?"<div class=\"emp\">暂无客户账号，请点击「创建客户账号」添加</div>":"<div style=\"overflow-x:auto\"><table><thead><tr><th>手机号</th><th>工厂名称</th><th>地区</th><th>状态</th><th>最后登录</th><th>操作</th></tr></thead><tbody>"+rows+"</tbody></table></div>")+"</div>";
+ });
+}
+
+function showAddCustomer(){
+ document.getElementById("modal").innerHTML='<button class="close" onclick="closeModal()">×</button><h3>🏭 创建客户账号</h3><form onsubmit="return addCustomer(event)" autocomplete="off"><div class="fr"><div class="fg"><label>手机号码 *</label><input type="tel" id="cPhone" placeholder="客户手机号，也是登录账号" maxlength="11" required></div><div class="fg"><label>登录密码 *</label><input type="password" id="cPass" placeholder="至少6位" required minlength="6"></div></div><div class="fg"><label>工厂/公司名称 *</label><input type="text" id="cFactory" placeholder="客户工厂或公司名称" required></div><div class="fg"><label>联系人</label><input type="text" id="cContact" placeholder="联系人姓名（选填）"></div><div class="fg"><label>省市区</label><div class="fr3"><div class="fg" style="margin-bottom:0"><select id="cProv" onchange="cpcUpdateCities()"><option value="">选择省份</option></select></div><div class="fg" style="margin-bottom:0"><select id="cCity" onchange="cpcUpdateDistricts()"><option value="">选择城市</option></select></div><div class="fg" style="margin-bottom:0"><select id="cDist"><option value="">选择区/县</option></select></div></div></div><div class="fg"><label>详细地址</label><input type="text" id="cAddr" placeholder="街道、门牌号等"></div><button class="btn btn-p btn-block">创建账号</button></form>';
+ api("/api/regions","GET").then(function(r){
+  if(r.ok&&r.data){var sel=document.getElementById("cProv");for(var i=0;i<r.data.length;i++){sel.innerHTML+='<option value="'+r.data[i]+'">'+r.data[i]+'</option>';}}
+ });
+ document.getElementById("overlay").classList.add("show");
+}
+function cpcUpdateCities(){
+ var p=document.getElementById("cProv").value;
+ var cs=document.getElementById("cCity");var ds=document.getElementById("cDist");
+ cs.innerHTML='<option value="">选择城市</option>';ds.innerHTML='<option value="">选择区/县</option>';
+ if(!p)return;
+ api("/api/regions?province="+encodeURIComponent(p),"GET").then(function(r){
+  if(r.ok&&r.data){for(var i=0;i<r.data.length;i++){cs.innerHTML+='<option value="'+r.data[i]+'">'+r.data[i]+'</option>';}}
+ });
+}
+function cpcUpdateDistricts(){
+ var p=document.getElementById("cProv").value,c=document.getElementById("cCity").value;
+ var ds=document.getElementById("cDist");ds.innerHTML='<option value="">选择区/县</option>';
+ if(!p||!c)return;
+ api("/api/regions?province="+encodeURIComponent(p)+"&city="+encodeURIComponent(c),"GET").then(function(r){
+  if(r.ok&&r.data){for(var i=0;i<r.data.length;i++){ds.innerHTML+='<option value="'+r.data[i]+'">'+r.data[i]+'</option>';}}
+ });
+}
+
+function addCustomer(e){e.preventDefault();
+ var phone=document.getElementById("cPhone").value.trim();
+ var pass=document.getElementById("cPass").value.trim();
+ var factory=document.getElementById("cFactory").value.trim();
+ var contact=document.getElementById("cContact").value.trim();
+ var prov=document.getElementById("cProv").value.trim();
+ var city=document.getElementById("cCity").value.trim();
+ var dist=document.getElementById("cDist").value.trim();
+ var addr=document.getElementById("cAddr").value.trim();
+ if(!/^1[3-9]\d{9}$/.test(phone)){toast("请输入正确的手机号码","e");return false;}
+ if(pass.length<6){toast("密码至少6位","e");return false;}
+ if(!factory){toast("请填写工厂名称","e");return false;}
+ api("/api/admin/customers","POST",{phone:phone,password:pass,factoryName:factory,contactPerson:contact,province:prov,city:city,district:dist,detailAddress:addr},true).then(function(r){
+  if(r.ok){toast("客户账号创建成功","s");closeModal();showPage("customers");}
+  else toast(r.msg||"创建失败","e");
+ });
+ return false;}
+
+function editCustomer(phone){
+ api("/api/admin/customers","GET",null,true).then(function(r){
+  var customers=r.ok?r.data:[];var c=null;
+  for(var i=0;i<customers.length;i++){if(customers[i].phone===phone){c=customers[i];break;}}
+  if(!c)return;
+  document.getElementById("modal").innerHTML='<button class="close" onclick="closeModal()">×</button><h3>编辑客户 · '+esc(phone)+'</h3><form onsubmit="return saveCustomer(event, \''+esc(phone)+'\')" autocomplete="off"><div class="fg"><label>工厂名称</label><input type="text" id="eFactory" value="'+esc(c.factoryName||"")+'"></div><div class="fg"><label>联系人</label><input type="text" id="eContact" value="'+esc(c.contactPerson||"")+'"></div><div class="fg"><label>省市区</label><div class="fr3"><div class="fg" style="margin-bottom:0"><select id="eProv" onchange="epcUpdateCities()"><option value="">选择省份</option></select></div><div class="fg" style="margin-bottom:0"><select id="eCity" onchange="epcUpdateDistricts()"><option value="">选择城市</option></select></div><div class="fg" style="margin-bottom:0"><select id="eDist"><option value="">选择区/县</option></select></div></div></div><div class="fg"><label>详细地址</label><input type="text" id="eAddr" value="'+esc(c.detailAddress||"")+'"></div><div class="fg"><label>状态</label><select id="eStatus"><option value="active"'+(c.status==="active"?" selected":"")+'>正常</option><option value="disabled"'+(c.status==="disabled"?" selected":"")+'>停用</option></select></div><button class="btn btn-p btn-block">保存修改</button></form>';
+  document.getElementById("overlay").classList.add("show");
+  // Load provinces and cascade
+  api("/api/regions","GET").then(function(r2){
+   if(!r2.ok||!r2.data)return;
+   var provSel=document.getElementById("eProv");
+   for(var j=0;j<r2.data.length;j++){provSel.innerHTML+='<option value="'+r2.data[j]+'"'+(r2.data[j]===(c.province||"")?" selected":"")+'>'+r2.data[j]+'</option>';}
+   if(c.province){
+    api("/api/regions?province="+encodeURIComponent(c.province),"GET").then(function(r3){
+     if(!r3.ok||!r3.data)return;
+     var citySel=document.getElementById("eCity");
+     citySel.innerHTML='<option value="">选择城市</option>';
+     for(var n=0;n<r3.data.length;n++){citySel.innerHTML+='<option value="'+r3.data[n]+'"'+(r3.data[n]===(c.city||"")?" selected":"")+'>'+r3.data[n]+'</option>';}
+     if(c.city){
+      api("/api/regions?province="+encodeURIComponent(c.province)+"&city="+encodeURIComponent(c.city),"GET").then(function(r4){
+       if(!r4.ok||!r4.data)return;
+       var distSel=document.getElementById("eDist");
+       distSel.innerHTML='<option value="">选择区/县</option>';
+       for(var m=0;m<r4.data.length;m++){distSel.innerHTML+='<option value="'+r4.data[m]+'"'+(r4.data[m]===(c.district||"")?" selected":"")+'>'+r4.data[m]+'</option>';}
+      });
+     }
+    });
+   }
+  });
+ });
+}
+function epcUpdateCities(){
+ var p=document.getElementById("eProv").value;
+ var cs=document.getElementById("eCity");var ds=document.getElementById("eDist");
+ cs.innerHTML='<option value="">选择城市</option>';ds.innerHTML='<option value="">选择区/县</option>';
+ if(!p)return;
+ api("/api/regions?province="+encodeURIComponent(p),"GET").then(function(r){
+  if(r.ok&&r.data){for(var i=0;i<r.data.length;i++){cs.innerHTML+='<option value="'+r.data[i]+'">'+r.data[i]+'</option>';}}
+ });
+}
+function epcUpdateDistricts(){
+ var p=document.getElementById("eProv").value,c=document.getElementById("eCity").value;
+ var ds=document.getElementById("eDist");ds.innerHTML='<option value="">选择区/县</option>';
+ if(!p||!c)return;
+ api("/api/regions?province="+encodeURIComponent(p)+"&city="+encodeURIComponent(c),"GET").then(function(r){
+  if(r.ok&&r.data){for(var i=0;i<r.data.length;i++){ds.innerHTML+='<option value="'+r.data[i]+'">'+r.data[i]+'</option>';}}
+ });
+}
+
+function saveCustomer(e,phone){e.preventDefault();
+ var data={};
+ data.factoryName=document.getElementById("eFactory").value.trim();
+ data.contactPerson=document.getElementById("eContact").value.trim();
+ data.province=document.getElementById("eProv").value.trim();
+ data.city=document.getElementById("eCity").value.trim();
+ data.district=document.getElementById("eDist").value.trim();
+ data.detailAddress=document.getElementById("eAddr").value.trim();
+ data.status=document.getElementById("eStatus").value;
+ api("/api/admin/customers/"+encodeURIComponent(phone),"PUT",data,true).then(function(r){
+  if(r.ok){toast("已更新","s");closeModal();showPage("customers");}
+  else toast(r.msg||"更新失败","e");
+ });
+ return false;}
+
+function resetCustPwd(phone){
+ var np=prompt("请输入新密码（至少6位）：");
+ if(!np||np.length<6){toast("密码至少6位","e");return;}
+ api("/api/admin/customers/"+encodeURIComponent(phone),"PUT",{password:np},true).then(function(r){
+  if(r.ok)toast("密码已重置","s");
+  else toast(r.msg||"操作失败","e");
+ });
+}
+
+function deleteCustomer(phone){
+ if(!confirm("确定删除客户 "+phone+"？\n\n此操作不可恢复！"))return;
+ api("/api/admin/customers/"+encodeURIComponent(phone),"DELETE",null,true).then(function(r){
+  if(r.ok){toast("已删除","s");showPage("customers");}
+  else toast(r.msg||"删除失败","e");
+ });
+}
+// ====== ACCOUNTS ======
+function accountsPage(){api('/api/admin/accounts','GET',null,true).then(function(r){var users=r.ok?r.data:[];var rows='';for(var i=0;i<users.length;i++){var u=users[i],sup=u.role==='super_admin';var isDisabled=u.status==='disabled';var statusBadge=isDisabled?'<span class="badge bg-r" style="margin-left:4px">已停用</span>':'';rows+='<tr style="'+(isDisabled?'opacity:.5':'')+'"><td><strong>'+esc(u.name)+'</strong>'+statusBadge+'</td><td>'+esc(u.username)+'</td><td>'+esc(u.phone||'-')+'</td><td><span class="badge '+(sup?'bg-b':'bg-g')+'">'+(sup?'管理员':'售后人员')+'</span></td><td>'+(u.region?esc(u.region):'未指定')+'</td><td>'+(u.createdAt?fmt(u.createdAt):'-')+'</td><td><div class="btn-group"><button class="btn btn-o btn-xs" onclick="editAccount(\''+u.id+'\',\''+esc(u.name)+'\',\''+esc(u.username)+'\',\''+esc(u.phone||'')+'\',\''+(u.status||'active')+'\',\''+(u.region||'')+'\')">编辑</button>'+(sup?'':'<button class="btn btn-w btn-xs" onclick="resetPwd(\''+u.id+'\')">密码</button>')+(isDisabled?'<button class="btn btn-s btn-xs" onclick="toggleAccStatus(\''+u.id+'\',\'active\')">启用</button>':'<button class="btn btn-d btn-xs" onclick="toggleAccStatus(\''+u.id+'\',\'disabled\')">停用</button>')+(sup?'':'<button class="btn btn-d btn-xs" onclick="deleteAccount(\''+u.id+'\',\''+esc(u.name)+'\')">删除</button>')+'</div></td></tr>';}document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>👥 账号管理 · '+users.length+' 个</h3><button class="btn btn-p btn-sm" onclick="showAddAcc()">＋ 创建账号</button></div><div style="overflow-x:auto"><table><thead><tr><th>姓名</th><th>用户名</th><th>手机</th><th>角色</th><th>服务站</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';});}
+function editAccount(id,name,username,phone,status,region){
+ var rgOpts='';['未指定','华南','华北','华中','华东','西南','西北','东北'].forEach(function(r){rgOpts+='<option value="'+r+'"'+(region===r?' selected':'')+'>'+r+(r==='未指定'?'':'服务站')+'</option>';});
+ document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>✏️ 编辑账号</h3><form onsubmit="return saveAccount(event,\''+id+'\')"><div class="fr"><div class="fg"><label>姓名</label><input type="text" id="eaName" value="'+esc(name)+'" required></div><div class="fg"><label>用户名</label><input type="text" id="eaUser" value="'+esc(username)+'" required></div></div><div class="fr"><div class="fg"><label>手机号</label><input type="tel" id="eaPhone" value="'+esc(phone)+'"></div><div class="fg"><label>所属服务站</label><select id="eaRegion">'+rgOpts+'</select></div></div><div class="fg"><label>状态</label><select id="eaStatus"><option value="active"'+(status==='active'?' selected':'')+'>正常</option><option value="disabled"'+(status==='disabled'?' selected':'')+'>停用</option></select></div><button class="btn btn-p btn-block">保存修改</button></form>';
+ document.getElementById('overlay').classList.add('show');
+}
+function saveAccount(e,id){e.preventDefault();
+ var n=document.getElementById('eaName').value.trim(),u=document.getElementById('eaUser').value.trim(),p=document.getElementById('eaPhone').value.trim(),st=document.getElementById('eaStatus').value,rg=document.getElementById('eaRegion').value;
+ if(!n||!u){toast('姓名和用户名不能为空','e');return false;}
+ api('/api/admin/accounts/'+id,'PUT',{name:n,username:u,phone:p,status:st,region:rg},true).then(function(r){
+  if(r.ok){toast('已更新','s');closeModal();showPage('accounts');}else toast(r.msg||'更新失败','e');
+ });return false;
+}
+function toggleAccStatus(id,st){api('/api/admin/accounts/'+id,'PUT',{status:st},true).then(function(r){if(r.ok){toast(st==='active'?'已启用':'已停用','s');showPage('accounts');}else toast(r.msg,'e');});}
+function deleteAccount(id,name){if(!confirm('确定删除账号「'+name+'」？此操作不可恢复！'))return;api('/api/admin/accounts/'+id,'DELETE',null,true).then(function(r){if(r.ok){toast('已删除','s');showPage('accounts');}else toast(r.msg||'删除失败','e');});}
+function showAddAcc(){document.getElementById('modal').innerHTML='<button class="close" onclick="closeModal()">×</button><h3>创建售后账号</h3><form onsubmit="return addAcc(event)"><div class="fr"><div class="fg"><label>姓名 *</label><input type="text" id="acN" required></div><div class="fg"><label>手机号</label><input type="tel" id="acPh"></div></div><div class="fr"><div class="fg"><label>用户名 *</label><input type="text" id="acU" required></div><div class="fg"><label>密码 *</label><input type="password" id="acP" placeholder="至少6位" required minlength="6"></div></div><div class="fg"><label>所属服务站</label><select id="acRegion"><option value="">未指定</option><option value="华南">华南服务站</option><option value="华北">华北服务站</option><option value="华中">华中服务站</option><option value="华东">华东服务站</option><option value="西南">西南服务站</option><option value="西北">西北服务站</option><option value="东北">东北服务站</option></select></div><button class="btn btn-p btn-block">创建账号</button></form>';document.getElementById('overlay').classList.add('show');}
+function addAcc(e){e.preventDefault();var n=document.getElementById('acN').value.trim(),ph=document.getElementById('acPh').value.trim(),u=document.getElementById('acU').value.trim(),p=document.getElementById('acP').value,rg=document.getElementById('acRegion').value;if(!n||!u||!p||p.length<6){toast('请填写完整（密码≥6位）','e');return false;}api('/api/admin/accounts','POST',{name:n,phone:ph,username:u,password:p,role:'staff',region:rg},true).then(function(r){if(r.ok){toast('创建成功','s');closeModal();showPage('accounts');}});return false;}
+function resetPwd(id){var np=prompt('新密码（至少6位）：');if(!np||np.length<6){toast('密码至少6位','e');return;}api('/api/admin/accounts/'+id,'PUT',{password:np},true).then(function(r){if(r.ok)toast('密码已重置','s');else toast(r.msg,'e');});}
+
+// ====== 操作日志（审计日志） ======
+var _ap=1,_af={};
+function aTypeName(t){
+ var m={customer_login:'客户登录',admin_login:'管理员登录',task_create:'创建工单',order_create:'创建订单',customer_create:'创建客户',customer_update:'更新客户信息',customer_delete:'删除客户',order_status:'订单状态变更',task_update:'更新工单'};
+ return m[t]||t;
+}
+function auditPage(){
+ _ap=1;_af={};
+ document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>📝 操作日志</h3><div class="date-picker"><select id="afType" onchange="_af.type=this.value;_ap=1;loadAudit()" style="padding:6px 10px;border:1px solid var(--b);border-radius:6px;font-size:12px"><option value="">全部类型</option><option value="customer_login">客户登录</option><option value="admin_login">管理员登录</option><option value="task_create">创建工单</option><option value="order_create">创建订单</option><option value="customer_create">创建客户</option><option value="customer_update">更新客户</option><option value="customer_delete">删除客户</option></select><input type="text" id="afStart" placeholder="开始日期" readonly onchange="_af.startDate=this.value;_ap=1;loadAudit()" style="cursor:pointer;width:130px;padding:6px 10px;border:1px solid var(--b);border-radius:6px;font-size:12px" onclick="openDatePicker(\'afStart\',\'date\')"><input type="text" id="afEnd" placeholder="结束日期" readonly onchange="_af.endDate=this.value;_ap=1;loadAudit()" style="cursor:pointer;width:130px;padding:6px 10px;border:1px solid var(--b);border-radius:6px;font-size:12px" onclick="openDatePicker(\'afEnd\',\'date\')"><button class="btn btn-o btn-xs" onclick="_af={};_ap=1;loadAudit();document.getElementById(\'afType\').value=\'\';document.getElementById(\'afStart\').value=\'\';document.getElementById(\'afEnd\').value=\'\'">重置</button></div></div><div id="auditData"><div class="emp">加载中...</div></div></div>';
+ loadAudit();
+}
+function loadAudit(){
+ var url='/api/admin/audit?page='+_ap+'&limit=30';
+ if(_af.type)url+='&type='+encodeURIComponent(_af.type);
+ if(_af.startDate)url+='&startDate='+_af.startDate;
+ if(_af.endDate)url+='&endDate='+_af.endDate;
+ api(url,'GET',null,true).then(function(r){
+  if(!r.ok){document.getElementById('auditData').innerHTML='<div class="emp">无数据</div>';return;}
+  var rows='';for(var i=0;i<r.data.length;i++){var a=r.data[i],tI='📋';if(a.type==='customer_login')tI='🔑';else if(a.type==='admin_login')tI='🔐';else if(a.type==='task_create')tI='📝';else if(a.type==='order_create')tI='📦';else if(a.type==='customer_create')tI='🏭';else if(a.type==='customer_update')tI='✏️';else if(a.type==='customer_delete')tI='🗑️';rows+='<tr><td><span>'+tI+'</span></td><td>'+esc(aTypeName(a.type))+'</td><td>'+esc(a.phone||'-')+'</td><td style="max-width:300px;word-break:break-all">'+esc(a.detail||'')+'</td><td>'+esc(a.ip||'')+'</td><td>'+fmt(a.time)+'</td></tr>';}
+  var pgn='';if(r.total>30){var tp=Math.ceil(r.total/30);pgn='<div class="pgn">';for(var p=1;p<=tp;p++)pgn+='<button class="'+(p===_ap?'cur':'')+'" onclick="_ap='+p+';loadAudit()">'+p+'</button>';pgn+='</div>';}
+  document.getElementById('auditData').innerHTML='<div style="font-size:11px;color:var(--ts);margin-bottom:6px">共 '+r.total+' 条记录</div><div style="overflow-x:auto"><table class="audit-table"><thead><tr><th></th><th>类型</th><th>手机号</th><th>详情</th><th>IP</th><th>时间</th></tr></thead><tbody>'+(rows||'<tr><td colspan="6">暂无记录</td></tr>')+'</tbody></table></div>'+pgn;
+ });
+}
+
+// ====== 费用月报 ======
+var _repMonth='';
+function monthlyPage(){
+ var now=new Date();_repMonth=String(now.getFullYear())+'-'+String(now.getMonth()+1).padStart(2,'0');
+ var monthOpts='';for(var y=2024;y<=now.getFullYear();y++){for(var m=1;m<=12;m++){var v=y+'-'+String(m).padStart(2,'0');if(y===now.getFullYear()&&m>now.getMonth()+1)break;monthOpts+='<option value="'+v+'"'+(v===_repMonth?' selected':'')+'>'+y+'年'+m+'月</option>';}}
+ document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>📊 费用月报</h3><div class="date-picker"><select id="rmMonth" onchange="_repMonth=this.value;loadMonthly()" style="padding:6px 10px;border:1px solid var(--b);border-radius:6px;font-size:13px">'+monthOpts+'</select><button class="btn btn-p btn-xs" onclick="window.print()">🖨️ 打印月报</button></div></div><div id="monthlyData"><div class="emp">加载中...</div></div></div>';
+ loadMonthly();
+}
+function loadMonthly(){
+ if(!_repMonth)return;
+ var parts=_repMonth.split('-');var sy=parseInt(parts[0]),sm=parseInt(parts[1]);
+ var ms=new Date(sy,sm-1,1).getTime(),me=new Date(sy,sm,0,23,59,59,999).getTime();
+ Promise.all([api('/api/tasks','GET',null,true),api('/api/orders','GET',null,true)]).then(function(r){
+  var tasks=(r[0].ok?r[0].data:[]).filter(function(t){return t.createdAt>=ms&&t.createdAt<=me;});
+  var orders=(r[1].ok?r[1].data:[]).filter(function(o){return o.createdAt>=ms&&o.createdAt<=me;});
+  var repCost=0,repPaid=0,orderTotal=0,orderPaid=0;
+  tasks.forEach(function(t){if(t.repairCost)repCost+=t.repairCost;if(t.quotationStatus==='approved'&&t.quotation)repPaid+=t.quotation;});
+  orders.forEach(function(o){orderTotal+=o.total||0;if(o.status==='paid'||o.status==='shipped'||o.status==='received')orderPaid+=o.total||0;});
+  var tRows='';tasks.forEach(function(t){
+   var st={pending:'待处理',processing:'处理中',completed:'已完成',cancelled:'已取消'};
+   var cost=t.repairCost||t.quotation||0;
+   tRows+='<tr style="cursor:pointer" onclick="taskDetail(\''+t.id+'\')"><td><strong>'+t.id+'</strong></td><td>'+esc(t.customerName||t.customerPhone)+'</td><td>'+esc(t.machineType||'')+'</td><td><span class="badge '+(t.status==='completed'?'bg-g':'bg-b')+'">'+(st[t.status]||t.status)+'</span></td><td style="color:'+(cost>0?'var(--d)':'var(--ts)')+';font-weight:600">'+(cost>0?'¥'+cost.toFixed(2):'-')+'</td><td>'+fmtD(t.createdAt)+'</td><td><button class="btn btn-o btn-xs" onclick="event.stopPropagation();printWarrantyForm(\''+t.id+'\')">🖨️</button></td></tr>';
+  });
+  var oRows='';orders.forEach(function(o){
+   var stT;if(o.status==='pending_payment')stT='待付款';else if(o.status==='paid')stT='已付款';else if(o.status==='shipped')stT='已发货';else if(o.status==='received')stT='已签收';else stT=o.status;
+   oRows+='<tr style="cursor:pointer" onclick="orderDetail(\''+o.id+'\')"><td><strong>'+o.id+'</strong></td><td>'+esc(o.customerName||o.customerPhone||'')+'</td><td>'+esc(o.outboundBy||'')+'</td><td>¥'+o.total.toFixed(2)+'</td><td><span class="badge '+(o.status==='received'||o.status==='shipped'?'bg-g':'bg-b')+'">'+stT+'</span></td><td>'+fmtD(o.createdAt)+'</td><td><button class="btn btn-p btn-xs" onclick="event.stopPropagation();printOrder(\''+o.id+'\')">🖨️</button></td></tr>';
+  });
+  var html='<div class="stats" style="margin-bottom:16px">';
+  html+='<div class="stat"><div class="s-icon r">🔧</div><div><div class="s-num">'+tasks.length+'</div><div class="s-label">报修工单</div></div></div>';
+  html+='<div class="stat"><div class="s-icon o">💰</div><div><div class="s-num">¥'+repCost.toFixed(2)+'</div><div class="s-label">报修费用合计</div></div></div>';
+  html+='<div class="stat"><div class="s-icon b">📦</div><div><div class="s-num">'+orders.length+'</div><div class="s-label">配件订单</div></div></div>';
+  html+='<div class="stat"><div class="s-icon g">💳</div><div><div class="s-num">¥'+orderTotal.toFixed(2)+'</div><div class="s-label">配件销售合计</div></div></div>';
+  html+='<div class="stat" style="grid-column:1/-1"><div class="s-icon p">📊</div><div><div class="s-num" style="font-size:18px;color:var(--d)">¥'+((repCost||repPaid)+orderTotal).toFixed(2)+'</div><div class="s-label">月度总计（报修'+repCost.toFixed(2)+' + 配件'+orderTotal.toFixed(2)+'）</div></div></div></div>';
+  html+='<div class="card"><div class="card-head"><h3>🔧 报修工单 · '+tasks.length+' 条 <small style="color:var(--ts);font-weight:400">点击行查看详情</small></h3></div>'+(tRows?'<div style="overflow-x:auto"><table><thead><tr><th>工单号</th><th>客户</th><th>设备</th><th>状态</th><th>费用</th><th>日期</th><th>操作</th></tr></thead><tbody>'+tRows+'</tbody></table></div>':'<div class="emp">本月无报修记录</div>')+'</div>';
+  html+='<div class="card"><div class="card-head"><h3>📦 配件订单 · '+orders.length+' 条 <small style="color:var(--ts);font-weight:400">点击行查看详情</small></h3></div>'+(oRows?'<div style="overflow-x:auto"><table><thead><tr><th>订单号</th><th>客户</th><th>操作人</th><th>金额</th><th>状态</th><th>日期</th><th>操作</th></tr></thead><tbody>'+oRows+'</tbody></table></div>':'<div class="emp">本月无配件订单</div>')+'</div>';
+  document.getElementById('monthlyData').innerHTML=html;
+ });
+}
+// ====== SETTINGS ======
+function settingsPage(){api('/api/settings','GET',null,true).then(function(r){var s=r.ok?r.data:{};document.getElementById('page').innerHTML='<div class="card"><div class="card-head"><h3>⚙️ 系统设置</h3></div><form onsubmit="return saveSet(event)"><div class="fr"><div class="fg"><label>公司名称</label><input type="text" id="setCN" value="'+esc(s.companyName||'')+'"></div><div class="fg"><label>公司简称</label><input type="text" id="setCS" value="'+esc(s.companyShort||'')+'"></div></div><div class="fr"><div class="fg"><label>公司地址</label><input type="text" id="setCA" value="'+esc(s.companyAddress||'')+'"></div><div class="fg"><label>公司电话</label><input type="text" id="setCP" value="'+esc(s.companyPhone||'')+'"></div></div><div class="fg"><label>收款二维码URL</label><input type="text" id="setQR" placeholder="收款二维码图片链接" value="'+esc(s.paymentQR||'')+'"></div><div class="fg"><label>豆包AI API Key <small style="color:var(--ts)">用于客户自助查询</small></label><input type="text" id="setDK" placeholder="从火山引擎ARK获取" value="'+esc(s.doubaoApiKey||'')+'"><p style="font-size:10px;color:var(--ts);margin-top:2px">获取地址：console.volcengine.com/ark → API密钥管理</p></div><div class="fg"><label>豆包模型名称 <small style="color:var(--ts)">默认 doubao-seed-2-0-pro-260215</small></label><input type="text" id="setDM" placeholder="doubao-seed-2-0-pro-260215 或 ep-xxxxx" value="'+esc(s.doubaoModel||'')+'"><p style="font-size:10px;color:var(--ts);margin-top:2px">豆包Seed 2.0模型 / 或填入推理端点ID（ep-xxxx）</p></div><button class="btn btn-p btn-block">保存设置</button></form></div>';});}
+function saveSet(e){e.preventDefault();var cn=document.getElementById('setCN').value.trim(),cs=document.getElementById('setCS').value.trim(),ca=document.getElementById('setCA').value.trim(),cp=document.getElementById('setCP').value.trim(),qr=document.getElementById('setQR').value.trim(),dk=document.getElementById('setDK').value.trim(),dm=document.getElementById('setDM').value.trim();api('/api/settings','PUT',{companyName:cn,companyShort:cs,companyAddress:ca,companyPhone:cp,paymentQR:qr,doubaoApiKey:dk,doubaoModel:dm},true).then(function(r){if(r.ok){toast('已保存','s');showPage('settings');}});return false;}
+
+document.getElementById('overlay').addEventListener('click',function(e){if(e.target===this)closeModal();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();});
+load();if(admin.token)showPage('dashboard');else showLogin();
